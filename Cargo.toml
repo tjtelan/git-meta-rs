@@ -1,0 +1,15 @@
+[package]
+name = "git-meta"
+description = "A basic git repo introspection tool"
+version = "0.0.1"
+authors = ["T.J. Telan <t.telan@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+git-url-parse = "^0.3"
+git2 = "^0.13"
+color-eyre = "^0.5"
+mktemp = "^0.4"
+log = "^0.4"
+hex = "^0.4"
+chrono = "^0.4"
