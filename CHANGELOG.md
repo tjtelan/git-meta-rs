@@ -1,4 +1,9 @@
-# [0.0.1]() (2021-02-06)
+# [0.1.0](https://github.com/tjtelan/git-meta-rs/compare/v0.0.1...v0.1.0) (2021-02-08)
+- Removed `GitRepoCloner`
+- `GitRepo::open()` now returns `Result<GitRepo>`
+- Minor renaming and rearranging of several impls in codebase
+- Lots of new documentation
+# [0.0.1](https://github.com/tjtelan/git-meta-rs/commit/b24fe6112e97eb9ee0cc1fd5aaa520bf8814f6c3) (2021-02-06)
 - Merging functionality from [Orbital](https://github.com/orbitalci/orbital) and from [git-event-rs](https://github.com/tjtelan/git-event-rs)
 - Introduced `GitRepo` struct
 - Introduced `GitCommitMeta` impl `new` with some options.

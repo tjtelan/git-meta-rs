@@ -1,53 +1,65 @@
+//! # Git-meta
+//!
+//! Git-meta is a collection of functionality for gathering information about git repos and commits
+
+//! You can open an existing repo with `GitRepo::open(path)`
+//! (Branch and commits provided for example. Provide `None` to use current checked out values)
+//!
+//! ```ignore
+//! use std::path::PathBuf;
+//! use git_meta::GitRepo;
+//! GitRepo::open(
+//!         PathBuf::from("/path/to/repo"),
+//!         Some("main".to_string()),
+//!         Some("b24fe6112e97eb9ee0cc1fd5aaa520bf8814f6c3".to_string()))
+//!     .expect("Unable to clone repo");
+//! ```
+//!
+//! You can create a new repo for cloning with `GitRepo::new(url)`
+//!
+//! ```ignore
+//! use std::path::PathBuf;
+//! use git_meta::{GitCredentials, GitRepo};
+//! use mktemp::Temp;
+//! let temp_dir = Temp::new_dir().expect("Unable to create test clone dir");
+//!
+//! let creds = GitCredentials::SshKey {
+//!     username: "git".to_string(),
+//!     public_key: None,
+//!     private_key: PathBuf::from("/path/to/private/key"),
+//!     passphrase: None,
+//! };
+//!
+//! GitRepo::new("https://github.com/tjtelan/git-meta-rs")
+//!     .expect("Unable to create GitRepo")
+//!     .with_credentials(Some(creds))
+//!     .git_clone_shallow(temp_dir.as_path())
+//!     .expect("Unable to clone repo");
+//! ```
+//!
+//! *Note:* Shallow cloning requires `git` CLI to be installed
+
 use chrono::prelude::*;
 use color_eyre::eyre::Result;
 use git2::Cred;
-use git2::{Branch, BranchType, Commit, ObjectType, Repository};
+use git2::{Branch, Commit, ObjectType, Repository};
 use git_url_parse::GitUrl;
 use hex::ToHex;
 use log::debug;
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
+#[doc(hidden)]
 pub mod clone;
+#[doc(hidden)]
 pub mod info;
+#[doc(hidden)]
+pub mod types;
 
-#[derive(Clone, Debug)]
-pub enum GitCredentials {
-    SshKey {
-        username: String,
-        public_key: Option<PathBuf>,
-        private_key: PathBuf,
-        passphrase: Option<String>,
-    },
-    UserPassPlaintext {
-        username: String,
-        password: String,
-    },
-}
-
-#[derive(Clone, Debug)]
-pub struct GitRepoCloner {
-    pub url: GitUrl,
-    pub credentials: Option<GitCredentials>,
-    pub branch: Option<String>,
-    pub path: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct GitRepo {
-    pub url: GitUrl,
-    pub head: Option<GitCommitMeta>,
-    pub credentials: Option<GitCredentials>,
-    pub branch: Option<String>,
-    pub path: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct GitCommitMeta {
-    pub id: String,
-    pub message: Option<String>,
-    pub epoch_time: Option<DateTime<Utc>>,
-}
+// Re-export our types in the root
+#[doc(inline)]
+pub use crate::types::*;
 
 impl GitCommitMeta {
     /// Trait bound for `id` is to convert the output from:
@@ -56,147 +68,132 @@ impl GitCommitMeta {
         GitCommitMeta {
             id: hex::encode(id),
             message: None,
-            epoch_time: None,
+            timestamp: None,
         }
     }
 
     /// `time` is intended to convert output from:
-    /// `git2::Commit.time().seconds() into `Datetime<Utc>`
+    /// `git2::Commit.time().seconds()` into `Datetime<Utc>`
     pub fn with_timestamp(mut self, time: i64) -> Self {
         let naive_datetime = NaiveDateTime::from_timestamp(time, 0);
         let datetime: DateTime<Utc> = DateTime::from_utc(naive_datetime, Utc);
 
-        self.epoch_time = Some(datetime);
+        self.timestamp = Some(datetime);
         self
     }
 
+    /// Set the commit message
     pub fn with_message(mut self, msg: Option<String>) -> Self {
         self.message = msg;
         self
     }
 }
 
+impl From<Repository> for GitRepo {
+    /// Convert from `git2::Repository` to `GitRepo`.
+    fn from(repo: Repository) -> Self {
+        GitRepo::open(repo.path().to_path_buf(), None, None)
+            .expect("Failed to convert Repository to GitRepo")
+    }
+}
+
 impl GitRepo {
+    // TODO: confirm if this supports detatched HEAD
+    // TODO: confirm if this supports partial commit hash
+    /// Returns a `GitRepo` after parsing metadata from a repo
+    /// - If a local `branch` is not provided, current checked out branch will be used.
+    ///   The provided branch will be resolved to its remote branch name
+    /// - If `commit_id` is not provided, the current commit (the HEAD of `branch`) will be used
+    pub fn open(
+        path: PathBuf,
+        branch: Option<String>,
+        commit_id: Option<String>,
+    ) -> Result<GitRepo> {
+        // First we open the repository and get the remote_url and parse it into components
+        let local_repo = GitRepo::to_repository_from_path(path.clone())?;
+        //let local_repo = GitRepo::from_path(path.clone())?;
+        let remote_url = GitRepo::git_remote_from_repo(&local_repo)?;
+        //let remote_url = local_repo.git_remote_from_repo()?;
+
+        let working_branch_name = GitRepo::get_git2_branch(&local_repo, &branch)?
+            .name()?
+            .expect("Unable to extract branch name")
+            .to_string();
+
+        let commit =
+            GitRepo::get_git2_commit(&local_repo, &Some(working_branch_name.clone()), &commit_id)?;
+
+        Ok(GitRepo::new(remote_url)?
+            .with_path(path)
+            .with_branch(working_branch_name)
+            .with_commit(commit))
+    }
+
+    /// Set the location of `GitRepo` on the filesystem
+    pub fn with_path(mut self, path: PathBuf) -> Self {
+        // We want to get the absolute path of the directory of the repo
+        self.path = Some(fs::canonicalize(path).expect("Directory was not found"));
+        self
+    }
+
+    /// Intended to be set with the remote name branch of GitRepo
+    pub fn with_branch<S: Into<String>>(mut self, branch: S) -> Self {
+        self.branch = Some(branch.into());
+        self
+    }
+
+    /// Set the `GitCommitMeta` from `git2::Commit`
+    pub fn with_commit(mut self, commit: Commit) -> Self {
+        let commit_msg = commit.clone().message().unwrap_or_default().to_string();
+
+        let commit = GitCommitMeta::new(commit.id())
+            .with_message(Some(commit_msg))
+            .with_timestamp(commit.time().seconds());
+
+        self.head = Some(commit);
+        self
+    }
+
+    /// Set `GitCredentials` for private repos
+    /// `None` indicates public repo
+    pub fn with_credentials(mut self, creds: Option<GitCredentials>) -> Self {
+        self.credentials = creds;
+        self
+    }
+
+    /// Create a new `GitRepo` with `url`
+    /// Use along with `with_*` methods to set other fields of `GitRepo`
+    /// Use `GitRepoCloner` if you need to clone the repo, and convert back with `GitRepo.into()`
+    pub fn new<S: AsRef<str>>(url: S) -> Result<GitRepo> {
+        Ok(GitRepo {
+            url: GitUrl::parse(url.as_ref()).expect("url failed to parse as GitUrl"),
+            credentials: None,
+            head: None,
+            branch: None,
+            path: None,
+        })
+    }
+
+    /// Returns a `git2::Repository` from `self.path`
+    pub fn to_repository(&self) -> Result<Repository, git2::Error> {
+        GitRepo::to_repository_from_path(
+            self.path.clone().expect("No path set to open").as_os_str(),
+        )
+    }
+
     /// Returns a `git2::Repository` from a given repo directory path
-    fn get_local_repo_from_path<P: AsRef<Path>>(path: P) -> Result<Repository, git2::Error> {
+    fn to_repository_from_path<P: AsRef<Path>>(path: P) -> Result<Repository, git2::Error> {
         Repository::open(path.as_ref().as_os_str())
     }
 
-    /// Return the remote url from the given Repository
-    fn _get_remote_url<'repo>(r: &'repo Repository) -> Result<String> {
-        // Get the name of the remote from the Repository
-        let remote_name = GitRepo::_get_remote_name(&r)?;
-
-        let remote_url: String = r
-            .find_remote(&remote_name)?
-            .url()
-            .expect("Unable to extract repo url from remote")
-            .chars()
-            .collect();
-
-        Ok(remote_url)
-    }
-
-    /// Return the remote name from the given Repository
-    fn _get_remote_name<'repo>(r: &'repo Repository) -> Result<String> {
-        let remote_name = r
-            .branch_upstream_remote(
-                r.head()
-                    .and_then(|h| h.resolve())?
-                    .name()
-                    .expect("branch name is valid utf8"),
-            )
-            .map(|b| b.as_str().expect("valid utf8").to_string())
-            .unwrap_or_else(|_| "origin".into());
-
-        debug!("Remote name: {:?}", &remote_name);
-
-        Ok(remote_name)
-    }
-
-    /// Returns the remote url after opening and validating repo from the local path
-    pub fn git_remote_from_path(path: &Path) -> Result<String> {
-        let r = GitRepo::get_local_repo_from_path(path)?;
-        GitRepo::_get_remote_url(&r)
-    }
-
-    /// Returns the remote url from the `git2::Repository` struct
-    fn git_remote_from_repo(local_repo: &Repository) -> Result<String> {
-        GitRepo::_get_remote_url(&local_repo)
-    }
-
-    /// Return the `git2::Branch` struct for a local repo (as opposed to a remote repo)
-    /// If `local_branch` is not provided, we'll select the current active branch, based on HEAD
-    fn get_working_branch<'repo>(
-        r: &'repo Repository,
-        local_branch: &Option<String>,
-    ) -> Result<Branch<'repo>> {
-        match local_branch {
-            Some(branch) => {
-                //println!("User passed branch: {:?}", branch);
-                let b = r.find_branch(&branch, BranchType::Local)?;
-                debug!("Returning given branch: {:?}", &b.name());
-                Ok(b)
-            }
-            None => {
-                // Getting the HEAD of the current
-                let head = r.head();
-                //let commit = head.unwrap().peel_to_commit();
-                //println!("{:?}", commit);
-
-                // Find the current local branch...
-                let local_branch = Branch::wrap(head?);
-
-                debug!("Returning HEAD branch: {:?}", local_branch.name()?);
-
-                // Convert git2::Error to anyhow::Error
-                match r.find_branch(
-                    local_branch
-                        .name()?
-                        .expect("Unable to return local branch name"),
-                    BranchType::Local,
-                ) {
-                    Ok(b) => Ok(b),
-                    Err(e) => Err(e.into()),
-                }
-            }
-        }
-    }
-
-    /// Returns a `bool` if the `git2::Commit` is a descendent of the `git2::Branch`
-    fn is_commit_in_branch<'repo>(r: &'repo Repository, commit: &Commit, branch: &Branch) -> bool {
-        let branch_head = branch.get().peel_to_commit();
-
-        if branch_head.is_err() {
-            return false;
-        }
-
-        let branch_head = branch_head.expect("Unable to extract branch HEAD commit");
-        if branch_head.id() == commit.id() {
-            return true;
-        }
-
-        // We get here if we're not working with HEAD commits, and we gotta dig deeper
-
-        let check_commit_in_branch = r.graph_descendant_of(branch_head.id(), commit.id());
-        //println!("is {:?} a decendent of {:?}: {:?}", &commit.id(), &branch_head.id(), is_commit_in_branch);
-
-        if check_commit_in_branch.is_err() {
-            return false;
-        }
-
-        check_commit_in_branch.expect("Unable to determine if commit exists within branch")
-    }
-
-    // TODO: Verify if commit is not in branch, that we'll end up in detached HEAD
     /// Return a `git2::Commit` that refers to the commit object requested for building
     /// If commit id is not provided, then we'll use the HEAD commit of whatever branch is active or provided
-    fn get_target_commit<'repo>(
+    fn get_git2_commit<'repo>(
         r: &'repo Repository,
         branch: &Option<String>,
         commit_id: &Option<String>,
     ) -> Result<Commit<'repo>> {
-        let working_branch = GitRepo::get_working_branch(r, branch)?;
+        let working_branch = GitRepo::get_git2_branch(r, branch)?;
 
         match commit_id {
             Some(id) => {
@@ -233,72 +230,9 @@ impl GitRepo {
         }
     }
 
-    /// Returns a `GitRepo` after parsing metadata from a repo
-    /// If branch is not provided, current checked out branch will be used
-    /// If commit id is not provided, the HEAD of the branch will be used
-    pub fn open(
-        path: PathBuf,
-        branch: Option<String>,
-        commit_id: Option<String>,
-    ) -> Result<GitRepo> {
-        // First we open the repository and get the remote_url and parse it into components
-        let local_repo = GitRepo::get_local_repo_from_path(path.clone())?;
-        let remote_url = GitRepo::git_remote_from_repo(&local_repo)?;
-
-        let working_branch_name = GitRepo::get_working_branch(&local_repo, &branch)?
-            .name()?
-            .expect("Unable to extract branch name")
-            .to_string();
-
-        let commit = GitRepo::get_target_commit(
-            &local_repo,
-            &Some(working_branch_name.clone()),
-            &commit_id,
-        )?;
-
-        Ok(GitRepo::new(remote_url)?
-            .with_path(path)
-            .with_branch(working_branch_name)
-            .with_commit(commit))
-    }
-
-    pub fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = Some(path);
-        self
-    }
-
-    pub fn with_branch<S: Into<String>>(mut self, branch: S) -> Self {
-        self.branch = Some(branch.into());
-        self
-    }
-
-    pub fn with_commit(mut self, commit: Commit) -> Self {
-        let commit_msg = commit.clone().message().unwrap_or_default().to_string();
-
-        let commit = GitCommitMeta::new(commit.id())
-            .with_message(Some(commit_msg))
-            .with_timestamp(commit.time().seconds());
-
-        self.head = Some(commit);
-        self
-    }
-
-    pub fn with_credentials(mut self, creds: GitCredentials) -> Self {
-        self.credentials = Some(creds);
-        self
-    }
-
-    pub fn new<S: AsRef<str>>(url: S) -> Result<GitRepo> {
-        Ok(GitRepo {
-            url: GitUrl::parse(url.as_ref()).expect("url failed to parse as GitUrl"),
-            credentials: None,
-            head: None,
-            branch: None,
-            path: None,
-        })
-    }
-
-    pub fn build_git2_remotecallback(&self) -> git2::RemoteCallbacks {
+    /// Builds a `git2::RemoteCallbacks` using `self.credentials` to be used
+    /// in authenticated calls to a remote repo
+    fn build_git2_remotecallback(&self) -> git2::RemoteCallbacks {
         if let Some(cred) = self.credentials.clone() {
             debug!("Before building callback: {:?}", &cred);
 
@@ -356,13 +290,5 @@ impl GitRepo {
             // No credentials. Repo is public
             git2::RemoteCallbacks::new()
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
     }
 }
