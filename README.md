@@ -4,3 +4,5 @@
 [![docs.rs](https://docs.rs/git-meta/badge.svg)](https://docs.rs/git-meta/)
 [![licence](https://img.shields.io/github/license/tjtelan/git-meta-rs)](LICENSE)
 ![Github actions build status](https://github.com/tjtelan/git-meta-rs/workflows/git-meta/badge.svg)
+
+Git-meta is a collection of functionality for gathering information about git repos and commits

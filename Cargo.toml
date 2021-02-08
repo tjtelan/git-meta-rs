@@ -1,14 +1,15 @@
 [package]
-name = "git-meta"
-description = "A basic git repo introspection tool"
-version = "0.0.1"
 authors = ["T.J. Telan <t.telan@gmail.com>"]
+categories = ["data-structures", "development-tools", "development-tools::build-utils"]
+description = "A basic git repo metadata inspection tool"
+documentation = "https://docs.rs/git-meta"
 edition = "2018"
+keywords = ["git", "utility"]
 license = "MIT"
+name = "git-meta"
 readme = "README.md"
 repository = "https://github.com/tjtelan/git-meta-rs"
-documentation = "https://docs.rs/git-meta"
-keywords = ["git"]
+version = "0.1.0"
 
 [dependencies]
 git-url-parse = "^0.3"
