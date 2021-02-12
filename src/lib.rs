@@ -143,15 +143,23 @@ impl GitRepo {
     }
 
     /// Set the `GitCommitMeta` from `git2::Commit`
-    pub fn with_commit(mut self, commit: Commit) -> Self {
-        let commit_msg = commit.clone().message().unwrap_or_default().to_string();
+    pub fn with_commit(mut self, commit: Option<Commit>) -> Self {
+        match commit {
+            Some(c) => {
+                let commit_msg = c.message().unwrap_or_default().to_string();
 
-        let commit = GitCommitMeta::new(commit.id())
-            .with_message(Some(commit_msg))
-            .with_timestamp(commit.time().seconds());
+                let commit = GitCommitMeta::new(c.id())
+                    .with_message(Some(commit_msg))
+                    .with_timestamp(c.time().seconds());
 
-        self.head = Some(commit);
-        self
+                self.head = Some(commit);
+                self
+            }
+            None => {
+                self.head = None;
+                self
+            }
+        }
     }
 
     /// Set `GitCredentials` for private repos
@@ -192,7 +200,7 @@ impl GitRepo {
         r: &'repo Repository,
         branch: &Option<String>,
         commit_id: &Option<String>,
-    ) -> Result<Commit<'repo>> {
+    ) -> Result<Option<Commit<'repo>>> {
         let working_branch = GitRepo::get_git2_branch(r, branch)?;
 
         match commit_id {
@@ -209,23 +217,41 @@ impl GitRepo {
 
                 let _ = GitRepo::is_commit_in_branch(r, &commit, &Branch::wrap(working_ref));
 
-                Ok(commit)
+                Ok(Some(commit))
             }
 
             // We want the HEAD of the remote branch (as opposed to the working branch)
             None => {
-                debug!("No commit provided. Using HEAD commit from remote branch");
+                debug!("No commit provided. Attempting to use HEAD commit from remote branch");
 
-                let upstream_branch = working_branch.upstream()?;
-                let working_ref = upstream_branch.into_reference();
+                match working_branch.upstream() {
+                    Ok(upstream_branch) => {
+                        let working_ref = upstream_branch.into_reference();
 
-                let commit = working_ref
-                    .peel_to_commit()
-                    .expect("Unable to retrieve HEAD commit object from remote branch");
+                        let commit = working_ref
+                            .peel_to_commit()
+                            .expect("Unable to retrieve HEAD commit object from remote branch");
 
-                let _ = GitRepo::is_commit_in_branch(r, &commit, &Branch::wrap(working_ref));
+                        let _ =
+                            GitRepo::is_commit_in_branch(r, &commit, &Branch::wrap(working_ref));
 
-                Ok(commit)
+                        Ok(Some(commit))
+                    }
+                    // This match-arm supports branches that are local-only
+                    Err(_e) => {
+                        debug!("No remote branch found. Using HEAD commit from local branch");
+                        let working_ref = working_branch.into_reference();
+
+                        let commit = working_ref
+                            .peel_to_commit()
+                            .expect("Unable to retrieve HEAD commit object from local branch");
+
+                        let _ =
+                            GitRepo::is_commit_in_branch(r, &commit, &Branch::wrap(working_ref));
+
+                        Ok(Some(commit))
+                    }
+                }
             }
         }
     }
