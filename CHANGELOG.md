@@ -1,3 +1,6 @@
+# [0.2.0](https://github.com/tjtelan/git-meta-rs/compare/v0.1.0...v0.2.0) (2021-02-12)
+- Loosened requirements for local branches resolving to remote branches ([#5](https://github.com/tjtelan/git-meta-rs/issues/5))
+- Modified `GitRepo::with_commit()` to take `Option<Commit>`
 # [0.1.0](https://github.com/tjtelan/git-meta-rs/compare/v0.0.1...v0.1.0) (2021-02-08)
 - Removed `GitRepoCloner`
 - `GitRepo::open()` now returns `Result<GitRepo>`
