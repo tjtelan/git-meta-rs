@@ -1,7 +1,9 @@
-# [0.2.1](https://github.com/tjtelan/git-meta-rs/compare/v0.1.0...v0.2.0) (2021-02-12)
+# [0.2.1](https://github.com/tjtelan/git-meta-rs/compare/v0.2.0...v0.2.1) (2021-02-13)
+- Check for new commits in a branch ([#2](https://github.com/tjtelan/git-meta-rs/issues/2))
 - Check for changes in a path ([#4](https://github.com/tjtelan/git-meta-rs/issues/4))
 - Expand partial commit ids ([#7](https://github.com/tjtelan/git-meta-rs/issues/7))
 - Added some tests and examples using this repo's commits
+- Checking if repo is a shallow clone ([#9](https://github.com/tjtelan/git-meta-rs/issues/9))
 # [0.2.0](https://github.com/tjtelan/git-meta-rs/compare/v0.1.0...v0.2.0) (2021-02-12)
 - Loosened requirements for local branches resolving to remote branches ([#5](https://github.com/tjtelan/git-meta-rs/issues/5))
 - Modified `GitRepo::with_commit()` to take `Option<Commit>`

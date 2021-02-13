@@ -331,6 +331,22 @@ impl GitRepo {
         false
     }
 
-    // TODO: check for if there are new commits
-    // pub fn new_commits_exist(&self) -> bool {}
+    /// Check if new commits exist by performing a shallow clone and comparing branch heads
+    pub fn new_commits_exist(&self) -> bool {
+        // Let's do a shallow clone behind the scenes using the same branch and creds
+        let repo = GitRepo::new(self.url.to_string())
+            .expect("Could not crete new GitUrl")
+            .with_branch(self.branch.clone().expect("No branch set"))
+            .with_credentials(self.credentials.clone());
+
+        let tempdir = Temp::new_dir().expect("Could not create temporary dir");
+
+        // We can do a shallow clone, because we only want the newest history
+        let repo = repo
+            .git_clone_shallow(tempdir)
+            .expect("Could not shallow clone dir");
+
+        // If the HEAD commits don't match, we assume that `repo` is newer
+        self.head != repo.head
+    }
 }

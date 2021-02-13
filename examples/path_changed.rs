@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     let repo = GitRepo::open(current_dir, None, None)?;
 
     println!(
-        "{:?}",
+        "Files that have changed:\n{:?}",
         repo.list_files_changed(
             "9c6c5e65c3590e299316d34718674de333bdd9c8",
             "c097ad2a8c07bf2e3df64e6e603eee0473ad8133"
