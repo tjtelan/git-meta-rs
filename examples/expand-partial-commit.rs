@@ -1,3 +1,8 @@
+// """
+// $ git show c097ad2
+// [Git log for commit: c097ad2a8c07bf2e3df64e6e603eee0473ad8133]
+// """
+
 use color_eyre::eyre::Result;
 use git_meta::GitRepo;
 
@@ -8,7 +13,7 @@ fn main() -> Result<()> {
 
     let repo = GitRepo::open(current_dir, None, None)?;
 
-    println!("{:?}", repo);
+    println!("{:?}", repo.expand_partial_commit_id("c097ad2"));
 
     Ok(())
 }

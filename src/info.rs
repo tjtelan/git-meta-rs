@@ -1,10 +1,10 @@
 use crate::{BranchHeads, GitCommitMeta, GitRepo};
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
-use git2::{Branch, BranchType, Commit, Repository};
+use git2::{Branch, BranchType, Commit, Oid, Repository};
 use log::debug;
 use mktemp::Temp;
 
@@ -205,6 +205,130 @@ impl GitRepo {
     /// Returns the remote url from the `git2::Repository` struct
     pub fn git_remote_from_repo(local_repo: &Repository) -> Result<String> {
         GitRepo::remote_url_from_repository(&local_repo)
+    }
+
+    /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit1` and `commit2`
+    pub fn list_files_changed<S: AsRef<str>>(
+        &self,
+        commit1: S,
+        commit2: S,
+    ) -> Result<Option<Vec<PathBuf>>> {
+        let repo = self.to_repository()?;
+
+        let commit1 = self.expand_partial_commit_id(commit1.as_ref())?;
+        let commit2 = self.expand_partial_commit_id(commit2.as_ref())?;
+
+        let oid1 = Oid::from_str(&commit1)?;
+        let oid2 = Oid::from_str(&commit2)?;
+
+        let git2_commit1 = repo.find_commit(oid1)?.tree()?;
+        let git2_commit2 = repo.find_commit(oid2)?.tree()?;
+
+        let diff = repo.diff_tree_to_tree(Some(&git2_commit1), Some(&git2_commit2), None)?;
+
+        let mut paths = Vec::new();
+
+        diff.print(git2::DiffFormat::NameOnly, |delta, _hunk, _line| {
+            paths.push(
+                delta
+                    .new_file()
+                    .path()
+                    .expect("Expected the new file path")
+                    .to_path_buf(),
+            );
+            //let f = delta.new_file().path().unwrap().display();
+            //println!("{:?}", f );
+            true
+        })?;
+
+        if paths.len() > 0 {
+            return Ok(Some(paths));
+        }
+
+        Ok(None)
+    }
+
+    /// Takes in a partial commit SHA-1, and attempts to expand to the full 40-char commit id
+    pub fn expand_partial_commit_id<S: AsRef<str>>(&self, partial_commit_id: S) -> Result<String> {
+        if partial_commit_id.as_ref().len() == 40 {
+            return Ok(partial_commit_id.as_ref().to_string());
+        }
+
+        let repo = self.to_repository()?;
+
+        let extended_commit = hex::encode(
+            repo.revparse_single(partial_commit_id.as_ref())?
+                .peel_to_commit()?
+                .id()
+                .as_bytes(),
+        );
+
+        Ok(extended_commit)
+    }
+
+    /// Checks the list of files changed between last 2 commits (`HEAD` and `HEAD~1`).
+    /// Returns `bool` depending on whether any changes were made in `path`.
+    /// A `path` should be relative to the repo root. Can be a file or a directory.
+    pub fn has_path_changed<P: AsRef<Path>>(&self, path: P) -> bool {
+        let repo = self.to_repository().expect("Could not open repo");
+
+        // Get `HEAD~1` commit
+        // This could actually be multiple parent commits, if merge commit
+        let head = repo
+            .head()
+            .expect("Could not get HEAD ref")
+            .peel_to_commit()
+            .expect("Could not convert to commit");
+        let head_commit_id = hex::encode(head.id().as_bytes());
+        for commit in head.parents() {
+            let parent_commit_id = hex::encode(commit.id().as_bytes());
+
+            if self.has_path_changed_between(&path, &head_commit_id, &parent_commit_id) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Checks the list of files changed between 2 commits (`commit1` and `commit2`).
+    /// Returns `bool` depending on whether any changes were made in `path`.
+    /// A `path` should be relative to the repo root. Can be a file or a directory.
+    pub fn has_path_changed_between<P: AsRef<Path>, S: AsRef<str>>(
+        &self,
+        path: P,
+        commit1: S,
+        commit2: S,
+    ) -> bool {
+        let commit1 = self
+            .expand_partial_commit_id(commit1.as_ref())
+            .expect("Could not expand partial id");
+        let commit2 = self
+            .expand_partial_commit_id(commit2.as_ref())
+            .expect("Could not expand partial id");
+
+        let changed_files = self
+            .list_files_changed(&commit1, &commit2)
+            .expect("Error retrieving commit changes");
+
+        if let Some(files) = changed_files {
+            for f in files.iter() {
+                if f.to_str()
+                    .expect("Couldn't convert pathbuf to str")
+                    .starts_with(
+                        &path
+                            .as_ref()
+                            .to_path_buf()
+                            .to_str()
+                            .expect("Couldn't convert pathbuf to str"),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     // TODO: check for if there are new commits
