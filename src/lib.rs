@@ -40,9 +40,9 @@
 //! *Note:* Shallow cloning requires `git` CLI to be installed
 
 use chrono::prelude::*;
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use git2::Cred;
-use git2::{Branch, Commit, ObjectType, Repository};
+use git2::{Branch, Commit, Repository};
 use git_url_parse::GitUrl;
 use hex::ToHex;
 use log::debug;
@@ -98,8 +98,6 @@ impl From<Repository> for GitRepo {
 }
 
 impl GitRepo {
-    // TODO: confirm if this supports detatched HEAD
-    // TODO: confirm if this supports partial commit hash
     /// Returns a `GitRepo` after parsing metadata from a repo
     /// - If a local `branch` is not provided, current checked out branch will be used.
     ///   The provided branch will be resolved to its remote branch name
@@ -111,14 +109,19 @@ impl GitRepo {
     ) -> Result<GitRepo> {
         // First we open the repository and get the remote_url and parse it into components
         let local_repo = GitRepo::to_repository_from_path(path.clone())?;
-        //let local_repo = GitRepo::from_path(path.clone())?;
         let remote_url = GitRepo::git_remote_from_repo(&local_repo)?;
-        //let remote_url = local_repo.git_remote_from_repo()?;
 
         let working_branch_name = GitRepo::get_git2_branch(&local_repo, &branch)?
             .name()?
             .expect("Unable to extract branch name")
             .to_string();
+
+        // We don't support digging around in past commits if the repo is shallow
+        if let Some(_c) = &commit_id {
+            if local_repo.is_shallow() {
+                return Err(eyre!("Can't open by commit on shallow clones"));
+            }
+        }
 
         let commit =
             GitRepo::get_git2_commit(&local_repo, &Some(working_branch_name.clone()), &commit_id)?;
@@ -162,15 +165,15 @@ impl GitRepo {
         }
     }
 
-    /// Set `GitCredentials` for private repos
+    /// Set `GitCredentials` for private repos.
     /// `None` indicates public repo
     pub fn with_credentials(mut self, creds: Option<GitCredentials>) -> Self {
         self.credentials = creds;
         self
     }
 
-    /// Create a new `GitRepo` with `url`
-    /// Use along with `with_*` methods to set other fields of `GitRepo`
+    /// Create a new `GitRepo` with `url`.
+    /// Use along with `with_*` methods to set other fields of `GitRepo`.
     /// Use `GitRepoCloner` if you need to clone the repo, and convert back with `GitRepo.into()`
     pub fn new<S: AsRef<str>>(url: S) -> Result<GitRepo> {
         Ok(GitRepo {
@@ -205,17 +208,15 @@ impl GitRepo {
 
         match commit_id {
             Some(id) => {
-                let working_ref = working_branch.into_reference();
-
                 debug!("Commit provided. Using {}", id);
-                let oid = git2::Oid::from_str(id)?;
+                let commit = r.find_commit(git2::Oid::from_str(id)?)?;
 
-                let obj = r.find_object(oid, ObjectType::from_str("commit"))?;
-                let commit = obj
-                    .into_commit()
-                    .expect("Unable to convert commit id into commit object");
-
-                let _ = GitRepo::is_commit_in_branch(r, &commit, &Branch::wrap(working_ref));
+                // Do we care about detatched HEAD?
+                //let _ = GitRepo::is_commit_in_branch(
+                //    r,
+                //    &commit,
+                //    &Branch::wrap(working_branch.into_reference()),
+                //);
 
                 Ok(Some(commit))
             }
@@ -316,5 +317,11 @@ impl GitRepo {
             // No credentials. Repo is public
             git2::RemoteCallbacks::new()
         }
+    }
+
+    /// Test whether `GitRepo` is a shallow clone
+    pub fn is_shallow(&self) -> bool {
+        let repo = self.to_repository().expect("Could not read repo");
+        repo.is_shallow()
     }
 }
