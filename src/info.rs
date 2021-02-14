@@ -3,7 +3,7 @@ use crate::{BranchHeads, GitCommitMeta, GitRepo};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use git2::{Branch, BranchType, Commit, Oid, Repository};
 use log::debug;
 use mktemp::Temp;
@@ -250,6 +250,13 @@ impl GitRepo {
 
     /// Takes in a partial commit SHA-1, and attempts to expand to the full 40-char commit id
     pub fn expand_partial_commit_id<S: AsRef<str>>(&self, partial_commit_id: S) -> Result<String> {
+        // We can't reliably succeed if repo is a shallow clone
+        if self.to_repository()?.is_shallow() {
+            return Err(eyre!(
+                "No support for partial commit id expand on shallow clones"
+            ));
+        }
+
         if partial_commit_id.as_ref().len() == 40 {
             return Ok(partial_commit_id.as_ref().to_string());
         }
