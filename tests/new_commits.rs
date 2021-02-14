@@ -5,7 +5,6 @@ use mktemp::Temp;
 fn new_commits_deep_clone() {
     let tempdir = Temp::new_dir().unwrap();
 
-    // We're just using this for cloning
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
         .git_clone(&tempdir)

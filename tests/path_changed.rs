@@ -1,11 +1,14 @@
 use git_meta::GitRepo;
-
-use std::env;
+use mktemp::Temp;
 
 #[test]
 fn files_changed() {
-    let current_dir = env::current_dir().unwrap();
-    let repo = GitRepo::open(current_dir, None, None).unwrap();
+    let tempdir = Temp::new_dir().unwrap();
+
+    let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
+        .unwrap()
+        .git_clone(&tempdir)
+        .unwrap();
 
     let files = vec![
         "CHANGELOG.md",
@@ -32,8 +35,12 @@ fn files_changed() {
 
 #[test]
 fn files_not_changed() {
-    let current_dir = env::current_dir().unwrap();
-    let repo = GitRepo::open(current_dir, None, None).unwrap();
+    let tempdir = Temp::new_dir().unwrap();
+
+    let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
+        .unwrap()
+        .git_clone(&tempdir)
+        .unwrap();
 
     let files = vec!["LICENSE", ".gitignore"];
 
@@ -52,16 +59,24 @@ fn files_not_changed() {
 
 #[test]
 fn dir_changed() {
-    let current_dir = env::current_dir().unwrap();
-    let repo = GitRepo::open(current_dir, None, None).unwrap();
+    let tempdir = Temp::new_dir().unwrap();
+
+    let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
+        .unwrap()
+        .git_clone(&tempdir)
+        .unwrap();
 
     assert!(repo.has_path_changed_between("src", "9c6c5e", "c097ad"));
 }
 
 #[test]
 fn non_existent_dir_changed() {
-    let current_dir = env::current_dir().unwrap();
-    let repo = GitRepo::open(current_dir, None, None).unwrap();
+    let tempdir = Temp::new_dir().unwrap();
+
+    let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
+        .unwrap()
+        .git_clone(&tempdir)
+        .unwrap();
 
     assert!(!repo.has_path_changed("not_a_dir"));
 }
