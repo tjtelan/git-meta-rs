@@ -1,3 +1,8 @@
+# [0.3.0](https://github.com/tjtelan/git-meta-rs/compare/v0.2.1...v0.3.0) (2021-02-14)
+- Changed `with_commit()` to take a commit id. Moved the `git2::Commit` builder to `with_git2_commit()`
+- Changed `with_branch()` to take an `Option<String>`
+- Renamed `list_files_changed` to `list_files_changed_between` for listing changed files between 2 commits
+- Added `list_files_changed_at` to list changed files between a single commit and it's previous commit
 # [0.2.1](https://github.com/tjtelan/git-meta-rs/compare/v0.2.0...v0.2.1) (2021-02-13)
 - Check for new commits in a branch ([#2](https://github.com/tjtelan/git-meta-rs/issues/2))
 - Check for changes in a path ([#4](https://github.com/tjtelan/git-meta-rs/issues/4))

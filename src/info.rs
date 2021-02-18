@@ -30,6 +30,7 @@ impl GitRepo {
     /// Providing a `branch_filter` will only return branches based on
     /// patterns matching the start of the branch name.
     pub fn get_remote_branch_head_refs(
+        //pub fn get_remote_branch_heads(
         &self,
         branch_filter: Option<Vec<String>>,
     ) -> Result<BranchHeads> {
@@ -208,7 +209,7 @@ impl GitRepo {
     }
 
     /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit1` and `commit2`
-    pub fn list_files_changed<S: AsRef<str>>(
+    pub fn list_files_changed_between<S: AsRef<str>>(
         &self,
         commit1: S,
         commit2: S,
@@ -246,6 +247,37 @@ impl GitRepo {
         }
 
         Ok(None)
+    }
+
+    /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit` and `commit~1` (the previous commit)
+    pub fn list_files_changed_at<S: AsRef<str>>(&self, commit: S) -> Result<Option<Vec<PathBuf>>> {
+        let repo = self.to_repository()?;
+
+        let commit = self.expand_partial_commit_id(commit.as_ref())?;
+
+        let oid = Oid::from_str(&commit)?;
+        let git2_commit = repo.find_commit(oid)?;
+
+        let mut changed_files = Vec::new();
+
+        for parent in git2_commit.parents() {
+            let parent_commit_id = hex::encode(parent.id().as_bytes());
+
+            match self.list_files_changed_between(&parent_commit_id, &commit)? {
+                Some(path_vec) => {
+                    for p in path_vec {
+                        changed_files.push(p);
+                    }
+                }
+                None => {}
+            }
+        }
+
+        if changed_files.len() > 0 {
+            Ok(Some(changed_files))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Takes in a partial commit SHA-1, and attempts to expand to the full 40-char commit id
@@ -315,7 +347,7 @@ impl GitRepo {
             .expect("Could not expand partial id");
 
         let changed_files = self
-            .list_files_changed(&commit1, &commit2)
+            .list_files_changed_between(&commit1, &commit2)
             .expect("Error retrieving commit changes");
 
         if let Some(files) = changed_files {
@@ -343,7 +375,7 @@ impl GitRepo {
         // Let's do a shallow clone behind the scenes using the same branch and creds
         let repo = GitRepo::new(self.url.to_string())
             .expect("Could not crete new GitUrl")
-            .with_branch(self.branch.clone().expect("No branch set"))
+            .with_branch(Some(self.branch.clone().expect("No branch set")))
             .with_credentials(self.credentials.clone());
 
         let tempdir = Temp::new_dir().expect("Could not create temporary dir");

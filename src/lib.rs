@@ -128,8 +128,8 @@ impl GitRepo {
 
         Ok(GitRepo::new(remote_url)?
             .with_path(path)
-            .with_branch(working_branch_name)
-            .with_commit(commit))
+            .with_branch(Some(working_branch_name))
+            .with_git2_commit(commit))
     }
 
     /// Set the location of `GitRepo` on the filesystem
@@ -140,13 +140,22 @@ impl GitRepo {
     }
 
     /// Intended to be set with the remote name branch of GitRepo
-    pub fn with_branch<S: Into<String>>(mut self, branch: S) -> Self {
-        self.branch = Some(branch.into());
+    pub fn with_branch(mut self, branch: Option<String>) -> Self {
+        if let Some(b) = branch {
+            self.branch = Some(b.into());
+        }
+        self
+    }
+
+    /// Reinit `GitRepo` with commit id
+    pub fn with_commit(mut self, commit_id: Option<String>) -> Self {
+        self = GitRepo::open(self.path.expect("No path set"), self.branch, commit_id)
+            .expect("Unable to open GitRepo with commit id");
         self
     }
 
     /// Set the `GitCommitMeta` from `git2::Commit`
-    pub fn with_commit(mut self, commit: Option<Commit>) -> Self {
+    pub fn with_git2_commit(mut self, commit: Option<Commit>) -> Self {
         match commit {
             Some(c) => {
                 let commit_msg = c.message().unwrap_or_default().to_string();
