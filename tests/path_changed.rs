@@ -1,8 +1,57 @@
+use std::path::PathBuf;
+
 use git_meta::GitRepo;
 use mktemp::Temp;
 
 #[test]
-fn files_changed() {
+fn files_changed_at_commit() {
+    let tempdir = Temp::new_dir().unwrap();
+
+    let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
+        .unwrap()
+        .git_clone(&tempdir)
+        .unwrap();
+
+    let expected_files = vec![
+        "CHANGELOG.md",
+        "Cargo.toml",
+        "examples/open.rs",
+        "src/lib.rs",
+    ];
+
+    let changed_files = repo
+        .list_files_changed_at("a7cf222c46ad32f2802e79e1935f753a27adc9e8")
+        .unwrap()
+        .unwrap();
+
+    for f in expected_files {
+        assert!(changed_files.contains(&PathBuf::from(f)))
+    }
+}
+
+#[test]
+fn files_not_changed_at_commit() {
+    let tempdir = Temp::new_dir().unwrap();
+
+    let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
+        .unwrap()
+        .git_clone(&tempdir)
+        .unwrap();
+
+    let expected_files = vec!["README.md", "src/clone.rs", "src/info.rs"];
+
+    let changed_files = repo
+        .list_files_changed_at("a7cf222c46ad32f2802e79e1935f753a27adc9e8")
+        .unwrap()
+        .unwrap();
+
+    for f in expected_files {
+        assert!(!changed_files.contains(&PathBuf::from(f)))
+    }
+}
+
+#[test]
+fn files_changed_between_2_commits() {
     let tempdir = Temp::new_dir().unwrap();
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
@@ -21,7 +70,7 @@ fn files_changed() {
     ];
 
     for f in repo
-        .list_files_changed(
+        .list_files_changed_between(
             "9c6c5e65c3590e299316d34718674de333bdd9c8",
             "c097ad2a8c07bf2e3df64e6e603eee0473ad8133",
         )
@@ -34,7 +83,7 @@ fn files_changed() {
 }
 
 #[test]
-fn files_not_changed() {
+fn files_not_changed_between_2_commits() {
     let tempdir = Temp::new_dir().unwrap();
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
@@ -45,7 +94,7 @@ fn files_not_changed() {
     let files = vec!["LICENSE", ".gitignore"];
 
     for f in repo
-        .list_files_changed(
+        .list_files_changed_between(
             "9c6c5e65c3590e299316d34718674de333bdd9c8",
             "c097ad2a8c07bf2e3df64e6e603eee0473ad8133",
         )
@@ -58,7 +107,7 @@ fn files_not_changed() {
 }
 
 #[test]
-fn dir_changed() {
+fn dir_changed_between_2_commits() {
     let tempdir = Temp::new_dir().unwrap();
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
