@@ -12,17 +12,20 @@ impl GitRepo {
     /// Return the remote name from the given `git2::Repository`
     /// For example, the typical remote name: `origin`
     pub fn get_remote_name(&self, r: &git2::Repository) -> Result<String> {
-        let remote_name = r
-            .branch_upstream_remote(
-                r.head()
-                    .and_then(|h| h.resolve())?
-                    .name()
-                    .expect("branch name is valid utf8"),
-            )
-            .map(|b| b.as_str().expect("valid utf8").to_string())
-            .unwrap_or_else(|_| "origin".into());
+        let local_branch = r.head().and_then(|h| h.resolve())?;
+        let local_branch = local_branch.name();
 
-        Ok(remote_name)
+        if let Some(refname) = local_branch {
+            let upstream_remote = r.branch_upstream_remote(refname)?;
+
+            if let Some(name) = upstream_remote.as_str() {
+                Ok(name.to_string())
+            } else {
+                Err(eyre!("Upstream remote name not valid utf-8"))
+            }
+        } else {
+            Err(eyre!("Local branch name not valid utf-8"))
+        }
     }
 
     /// Return a `HashMap<String, GitCommitMeta>` for a branch containing
