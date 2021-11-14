@@ -120,16 +120,16 @@ impl GitRepo {
         r: &'repo Repository,
         commit: &Commit,
         branch: &Branch,
-    ) -> bool {
+    ) -> Result<bool> {
         let branch_head = branch.get().peel_to_commit();
 
         if branch_head.is_err() {
-            return false;
+            return Ok(false);
         }
 
-        let branch_head = branch_head.expect("Unable to extract branch HEAD commit");
+        let branch_head = branch_head.wrap_err("Unable to extract branch HEAD commit")?;
         if branch_head.id() == commit.id() {
-            return true;
+            return Ok(true);
         }
 
         // We get here if we're not working with HEAD commits, and we gotta dig deeper
@@ -138,10 +138,13 @@ impl GitRepo {
         //println!("is {:?} a decendent of {:?}: {:?}", &commit.id(), &branch_head.id(), is_commit_in_branch);
 
         if check_commit_in_branch.is_err() {
-            return false;
+            return Ok(false);
         }
 
-        check_commit_in_branch.expect("Unable to determine if commit exists within branch")
+        Ok(
+            check_commit_in_branch
+                .wrap_err("Unable to determine if commit exists within branch")?,
+        )
     }
 
     /// Return the `git2::Branch` struct for a local repo (as opposed to a remote repo)
