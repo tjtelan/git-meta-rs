@@ -3,7 +3,7 @@ use crate::{BranchHeads, GitCommitMeta, GitRepo};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{eyre, Context, ContextCompat, Result};
 use git2::{Branch, BranchType, Commit, Oid, Repository};
 use log::debug;
 use mktemp::Temp;
@@ -334,26 +334,26 @@ impl GitRepo {
     /// Checks the list of files changed between last 2 commits (`HEAD` and `HEAD~1`).
     /// Returns `bool` depending on whether any changes were made in `path`.
     /// A `path` should be relative to the repo root. Can be a file or a directory.
-    pub fn has_path_changed<P: AsRef<Path>>(&self, path: P) -> bool {
-        let repo = self.to_repository().expect("Could not open repo");
+    pub fn has_path_changed<P: AsRef<Path>>(&self, path: P) -> Result<bool> {
+        let repo = self.to_repository().wrap_err("Could not open repo")?;
 
         // Get `HEAD~1` commit
         // This could actually be multiple parent commits, if merge commit
         let head = repo
             .head()
-            .expect("Could not get HEAD ref")
+            .wrap_err("Could not get HEAD ref")?
             .peel_to_commit()
-            .expect("Could not convert to commit");
+            .wrap_err("Could not convert to commit")?;
         let head_commit_id = hex::encode(head.id().as_bytes());
         for commit in head.parents() {
             let parent_commit_id = hex::encode(commit.id().as_bytes());
 
-            if self.has_path_changed_between(&path, &head_commit_id, &parent_commit_id) {
-                return true;
+            if self.has_path_changed_between(&path, &head_commit_id, &parent_commit_id)? {
+                return Ok(true);
             }
         }
 
-        false
+        Ok(false)
     }
 
     /// Checks the list of files changed between 2 commits (`commit1` and `commit2`).
@@ -364,36 +364,36 @@ impl GitRepo {
         path: P,
         commit1: S,
         commit2: S,
-    ) -> bool {
+    ) -> Result<bool> {
         let commit1 = self
             .expand_partial_commit_id(commit1.as_ref())
-            .expect("Could not expand partial id");
+            .wrap_err("Could not expand partial commit id for commit1")?;
         let commit2 = self
             .expand_partial_commit_id(commit2.as_ref())
-            .expect("Could not expand partial id");
+            .wrap_err("Could not expand partial commit id for commit2")?;
 
         let changed_files = self
             .list_files_changed_between(&commit1, &commit2)
-            .expect("Error retrieving commit changes");
+            .wrap_err("Error retrieving commit changes")?;
 
         if let Some(files) = changed_files {
             for f in files.iter() {
                 if f.to_str()
-                    .expect("Couldn't convert pathbuf to str")
+                    .wrap_err("Couldn't convert pathbuf to str")?
                     .starts_with(
                         &path
                             .as_ref()
                             .to_path_buf()
                             .to_str()
-                            .expect("Couldn't convert pathbuf to str"),
+                            .wrap_err("Couldn't convert pathbuf to str")?,
                     )
                 {
-                    return true;
+                    return Ok(true);
                 }
             }
         }
 
-        false
+        Ok(false)
     }
 
     /// Check if new commits exist by performing a shallow clone and comparing branch heads
