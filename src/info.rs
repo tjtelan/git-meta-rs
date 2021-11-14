@@ -397,21 +397,36 @@ impl GitRepo {
     }
 
     /// Check if new commits exist by performing a shallow clone and comparing branch heads
-    pub fn new_commits_exist(&self) -> bool {
+    pub fn new_commits_exist(&self) -> Result<bool> {
         // Let's do a shallow clone behind the scenes using the same branch and creds
-        let repo = GitRepo::new(self.url.to_string())
-            .expect("Could not crete new GitUrl")
-            .with_branch(Some(self.branch.clone().expect("No branch set")))
-            .with_credentials(self.credentials.clone());
+        let repo = if let Ok(gitrepo) = GitRepo::new(self.url.to_string()) {
+            let branch = if let Some(branch) = self.branch.clone() {
+                branch
+            } else {
+                return Err(eyre!("No branch set"));
+            };
 
-        let tempdir = Temp::new_dir().expect("Could not create temporary dir");
+            gitrepo
+                .with_branch(Some(branch))
+                .with_credentials(self.credentials.clone())
+        } else {
+            return Err(eyre!("Could not crete new GitUrl"));
+        };
+
+        let tempdir = if let Ok(dir) = Temp::new_dir() {
+            dir
+        } else {
+            return Err(eyre!("Could not create temporary dir"));
+        };
 
         // We can do a shallow clone, because we only want the newest history
-        let repo = repo
-            .git_clone_shallow(tempdir)
-            .expect("Could not shallow clone dir");
+        let repo = if let Ok(gitrepo) = repo.git_clone_shallow(tempdir) {
+            gitrepo
+        } else {
+            return Err(eyre!("Could not shallow clone dir"));
+        };
 
         // If the HEAD commits don't match, we assume that `repo` is newer
-        self.head != repo.head
+        Ok(self.head != repo.head)
     }
 }
