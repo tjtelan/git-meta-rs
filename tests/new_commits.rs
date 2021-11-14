@@ -17,5 +17,5 @@ fn new_commits_deep_clone() {
     )
     .unwrap();
 
-    assert!(repo.new_commits_exist());
+    assert!(repo.new_commits_exist().unwrap());
 }

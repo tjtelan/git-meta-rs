@@ -115,7 +115,7 @@ fn dir_changed_between_2_commits() {
         .git_clone(&tempdir)
         .unwrap();
 
-    assert!(repo.has_path_changed_between("src", "9c6c5e", "c097ad"));
+    assert!(repo.has_path_changed_between("src", "9c6c5e", "c097ad").unwrap());
 }
 
 #[test]
@@ -127,5 +127,5 @@ fn non_existent_dir_changed() {
         .git_clone(&tempdir)
         .unwrap();
 
-    assert!(!repo.has_path_changed("not_a_dir"));
+    assert!(!repo.has_path_changed("not_a_dir").unwrap());
 }
