@@ -141,10 +141,7 @@ impl GitRepo {
             return Ok(false);
         }
 
-        Ok(
-            check_commit_in_branch
-                .wrap_err("Unable to determine if commit exists within branch")?,
-        )
+        check_commit_in_branch.wrap_err("Unable to determine if commit exists within branch")
     }
 
     /// Return the `git2::Branch` struct for a local repo (as opposed to a remote repo)
@@ -260,17 +257,18 @@ impl GitRepo {
         let mut paths = Vec::new();
 
         diff.print(git2::DiffFormat::NameOnly, |delta, _hunk, _line| {
-            paths.push(
-                delta
-                    .new_file()
-                    .path()
-                    .expect("Expected the new file path")
-                    .to_path_buf(),
-            );
+            let delta_path = if let Some(p) = delta.new_file().path() {
+                p
+            } else {
+                return false;
+            };
+
+            paths.push(delta_path.to_path_buf());
             //let f = delta.new_file().path().unwrap().display();
             //println!("{:?}", f );
             true
-        })?;
+        })
+        .wrap_err("File path not found in new commit to compare")?;
 
         if !paths.is_empty() {
             return Ok(Some(paths));
