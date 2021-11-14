@@ -170,13 +170,14 @@ impl GitRepo {
 
                 debug!("Returning HEAD branch: {:?}", local_branch.name()?);
 
-                // Convert git2::Error to anyhow::Error
-                match r.find_branch(
-                    local_branch
-                        .name()?
-                        .expect("Unable to return local branch name"),
-                    BranchType::Local,
-                ) {
+                let local_branch_name = if let Ok(Some(name)) = local_branch.name() {
+                    name
+                } else {
+                    return Err(eyre!("Unable to return local branch name"));
+                };
+
+                // Convert git2::Error to Error
+                match r.find_branch(local_branch_name, BranchType::Local) {
                     Ok(b) => Ok(b),
                     Err(e) => Err(e.into()),
                 }
