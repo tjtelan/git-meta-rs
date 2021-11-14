@@ -142,7 +142,7 @@ impl GitRepo {
     /// Intended to be set with the remote name branch of GitRepo
     pub fn with_branch(mut self, branch: Option<String>) -> Self {
         if let Some(b) = branch {
-            self.branch = Some(b.into());
+            self.branch = Some(b);
         }
         self
     }
