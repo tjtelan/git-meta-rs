@@ -33,12 +33,15 @@ impl GitRepo {
     /// Providing a `branch_filter` will only return branches based on
     /// patterns matching the start of the branch name.
     pub fn get_remote_branch_head_refs(
-        //pub fn get_remote_branch_heads(
         &self,
         branch_filter: Option<Vec<String>>,
     ) -> Result<BranchHeads> {
         // Create a temp directory (In case we need to clone)
-        let temp_dir = Temp::new_dir().unwrap();
+        let temp_dir = if let Ok(temp_dir) = Temp::new_dir() {
+            temp_dir
+        } else {
+            return Err(eyre!("Unable to create temp directory"));
+        };
 
         // Check on path. If it doesn't exist, then we gotta clone and open the repo
         // so we can have a git2::Repository to work with
@@ -52,20 +55,33 @@ impl GitRepo {
 
         let cb = self.build_git2_remotecallback();
 
-        let remote = self
-            .get_remote_name(&repo)
-            .expect("Could not read remote name from git2::Repository");
+        let remote_name = if let Ok(name) = self.get_remote_name(&repo) {
+            name
+        } else {
+            return Err(eyre!("Could not read remote name from git2::Repository"));
+        };
 
-        let mut remote = repo
-            .find_remote(&remote)
-            .or_else(|_| repo.remote_anonymous(&remote))
-            .unwrap();
+        let mut remote = if let Ok(r) = repo.find_remote(&remote_name) {
+            r
+        } else {
+            if let Ok(anon_remote) = repo.remote_anonymous(&remote_name) {
+                anon_remote
+            } else {
+                return Err(eyre!(
+                    "Could not create anonymous remote from: {:?}",
+                    &remote_name
+                ));
+            }
+        };
 
         // Connect to the remote and call the printing function for each of the
         // remote references.
-        let connection = remote
-            .connect_auth(git2::Direction::Fetch, Some(cb), None)
-            .expect("Unable to connect to git repo");
+        let connection =
+            if let Ok(conn) = remote.connect_auth(git2::Direction::Fetch, Some(cb), None) {
+                conn
+            } else {
+                return Err(eyre!("Unable to connect to git repo"));
+            };
 
         let git_branch_ref_prefix = "refs/heads/";
         let mut ref_map: HashMap<String, GitCommitMeta> = HashMap::new();
