@@ -190,12 +190,11 @@ impl GitRepo {
         // Get the name of the remote from the Repository
         let remote_name = GitRepo::remote_name_from_repository(r)?;
 
-        let remote_url: String = r
-            .find_remote(&remote_name)?
-            .url()
-            .expect("Unable to extract repo url from remote")
-            .chars()
-            .collect();
+        let remote_url: String = if let Some(url) = r.find_remote(&remote_name)?.url() {
+            url.chars().collect()
+        } else {
+            return Err(eyre!("Unable to extract repo url from remote"));
+        };
 
         Ok(remote_url)
     }
