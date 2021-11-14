@@ -40,7 +40,7 @@ impl GitRepo {
         // Check on path. If it doesn't exist, then we gotta clone and open the repo
         // so we can have a git2::Repository to work with
         let repo = if let Some(p) = self.path.clone() {
-            GitRepo::to_repository_from_path(p.clone())?
+            GitRepo::to_repository_from_path(p)?
         } else {
             // Shallow clone
             self.git_clone_shallow(temp_dir.as_path())?
@@ -90,7 +90,7 @@ impl GitRepo {
 
             let head_commit = GitCommitMeta::new(commit.id().as_bytes())
                 .with_timestamp(commit.time().seconds())
-                .with_message(commit.message().map_or(None, |m| Some(m.to_string())));
+                .with_message(commit.message().map(|m| m.to_string()));
 
             ref_map.insert(branch_name, head_commit);
         }
@@ -136,7 +136,7 @@ impl GitRepo {
         match local_branch {
             Some(branch) => {
                 //println!("User passed branch: {:?}", branch);
-                let b = r.find_branch(&branch, BranchType::Local)?;
+                let b = r.find_branch(branch, BranchType::Local)?;
                 debug!("Returning given branch: {:?}", &b.name());
                 Ok(b)
             }
@@ -166,9 +166,9 @@ impl GitRepo {
     }
 
     /// Return the remote url from the given Repository
-    pub fn remote_url_from_repository<'repo>(r: &'repo Repository) -> Result<String> {
+    pub fn remote_url_from_repository(r: &Repository) -> Result<String> {
         // Get the name of the remote from the Repository
-        let remote_name = GitRepo::remote_name_from_repository(&r)?;
+        let remote_name = GitRepo::remote_name_from_repository(r)?;
 
         let remote_url: String = r
             .find_remote(&remote_name)?
@@ -181,7 +181,7 @@ impl GitRepo {
     }
 
     /// Return the remote name from the given Repository
-    fn remote_name_from_repository<'repo>(r: &'repo Repository) -> Result<String> {
+    fn remote_name_from_repository(r: &Repository) -> Result<String> {
         let remote_name = r
             .branch_upstream_remote(
                 r.head()
@@ -205,7 +205,7 @@ impl GitRepo {
 
     /// Returns the remote url from the `git2::Repository` struct
     pub fn git_remote_from_repo(local_repo: &Repository) -> Result<String> {
-        GitRepo::remote_url_from_repository(&local_repo)
+        GitRepo::remote_url_from_repository(local_repo)
     }
 
     /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit1` and `commit2`
@@ -242,7 +242,7 @@ impl GitRepo {
             true
         })?;
 
-        if paths.len() > 0 {
+        if !paths.is_empty() {
             return Ok(Some(paths));
         }
 
@@ -263,17 +263,14 @@ impl GitRepo {
         for parent in git2_commit.parents() {
             let parent_commit_id = hex::encode(parent.id().as_bytes());
 
-            match self.list_files_changed_between(&parent_commit_id, &commit)? {
-                Some(path_vec) => {
-                    for p in path_vec {
-                        changed_files.push(p);
-                    }
+            if let Some(path_vec) = self.list_files_changed_between(&parent_commit_id, &commit)? {
+                for p in path_vec {
+                    changed_files.push(p);
                 }
-                None => {}
             }
         }
 
-        if changed_files.len() > 0 {
+        if !changed_files.is_empty() {
             Ok(Some(changed_files))
         } else {
             Ok(None)
@@ -282,7 +279,6 @@ impl GitRepo {
 
     /// Takes in a partial commit SHA-1, and attempts to expand to the full 40-char commit id
     pub fn expand_partial_commit_id<S: AsRef<str>>(&self, partial_commit_id: S) -> Result<String> {
-
         // Don't need to do anything if the commit is already complete
         // I guess the only issue is not validating it exists. Is that ok?
         if partial_commit_id.as_ref().len() == 40 {

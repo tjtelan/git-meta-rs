@@ -81,9 +81,9 @@ impl GitRepo {
                     };
 
                     GitRepo::open(target.as_ref().to_path_buf(), None, None)
-                        .expect(
-                            format!("Failed to open shallow clone dir: {:?}", clone_out).as_str(),
-                        )
+                        .unwrap_or_else(|_| {
+                            panic!("Failed to open shallow clone dir: {:?}", clone_out)
+                        })
                         .with_credentials(Some(creds))
                 }
                 crate::GitCredentials::UserPassPlaintext { username, password } => {
@@ -108,9 +108,9 @@ impl GitRepo {
                     let creds = GitCredentials::UserPassPlaintext { username, password };
 
                     GitRepo::open(target.as_ref().to_path_buf(), None, None)
-                        .expect(
-                            format!("Failed to open shallow clone dir: {:?}", clone_out).as_str(),
-                        )
+                        .unwrap_or_else(|_| {
+                            panic!("Failed to open shallow clone dir: {:?}", clone_out)
+                        })
                         .with_credentials(Some(creds))
                 }
             }
@@ -137,7 +137,7 @@ impl GitRepo {
                 .stdout;
 
             GitRepo::open(target.as_ref().to_path_buf(), None, None)
-                .expect(format!("Failed to open shallow clone dir: {:?}", clone_out).as_str())
+                .unwrap_or_else(|_| panic!("Failed to open shallow clone dir: {:?}", clone_out))
         };
 
         Ok(repo)
