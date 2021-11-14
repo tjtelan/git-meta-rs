@@ -63,15 +63,13 @@ impl GitRepo {
 
         let mut remote = if let Ok(r) = repo.find_remote(&remote_name) {
             r
+        } else if let Ok(anon_remote) = repo.remote_anonymous(&remote_name) {
+            anon_remote
         } else {
-            if let Ok(anon_remote) = repo.remote_anonymous(&remote_name) {
-                anon_remote
-            } else {
-                return Err(eyre!(
-                    "Could not create anonymous remote from: {:?}",
-                    &remote_name
-                ));
-            }
+            return Err(eyre!(
+                "Could not create anonymous remote from: {:?}",
+                &remote_name
+            ));
         };
 
         // Connect to the remote and call the printing function for each of the
@@ -201,15 +199,25 @@ impl GitRepo {
 
     /// Return the remote name from the given Repository
     fn remote_name_from_repository(r: &Repository) -> Result<String> {
-        let remote_name = r
-            .branch_upstream_remote(
-                r.head()
-                    .and_then(|h| h.resolve())?
-                    .name()
-                    .expect("branch name is valid utf8"),
-            )
-            .map(|b| b.as_str().expect("valid utf8").to_string())
-            .unwrap_or_else(|_| "origin".into());
+        let local_branch = r.head().and_then(|h| h.resolve())?;
+        let local_branch_name = if let Some(name) = local_branch.name() {
+            name
+        } else {
+            return Err(eyre!("Local branch name is not valid utf-8"));
+        };
+
+        let upstream_remote_name_buf =
+            if let Ok(remote) = r.branch_upstream_remote(local_branch_name) {
+                remote
+            } else {
+                return Err(eyre!("Could not retrieve remote name from local branch"));
+            };
+
+        let remote_name = if let Some(name) = upstream_remote_name_buf.as_str() {
+            name.to_string()
+        } else {
+            return Err(eyre!("Remote name not valid utf-8"));
+        };
 
         debug!("Remote name: {:?}", &remote_name);
 
