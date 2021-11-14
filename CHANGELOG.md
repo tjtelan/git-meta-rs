@@ -1,3 +1,8 @@
+# [0.4.0](https://github.com/tjtelan/git-meta-rs/compare/v0.3.0...v0.4.0) (2021-11-13)
+- Fix clippy warnings
+- Replace panic behavior with returning `Err()`
+- Migrate to Rust 2021
+
 # [0.3.1](https://github.com/tjtelan/git-meta-rs/compare/v0.3.0...v0.3.1) (2021-02-26)
 - Changed the order of short-circuit checks in `expand_partial_commit_id()` ([#15](https://github.com/tjtelan/git-meta-rs/issues/15))
 # [0.3.0](https://github.com/tjtelan/git-meta-rs/compare/v0.2.1...v0.3.0) (2021-02-14)

@@ -3,16 +3,16 @@ authors = ["T.J. Telan <t.telan@gmail.com>"]
 categories = ["data-structures", "development-tools", "development-tools::build-utils"]
 description = "A basic git repo metadata inspection tool"
 documentation = "https://docs.rs/git-meta"
-edition = "2018"
+edition = "2021"
 keywords = ["git", "utility"]
 license = "MIT"
 name = "git-meta"
 readme = "README.md"
 repository = "https://github.com/tjtelan/git-meta-rs"
-version = "0.3.1"
+version = "0.4.0"
 
 [dependencies]
-git-url-parse = "^0.3"
+git-url-parse = "^0.4"
 git2 = "^0.13"
 color-eyre = "^0.5"
 mktemp = "^0.4"
