@@ -9,6 +9,7 @@ fn files_changed_at_commit() {
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
@@ -20,6 +21,7 @@ fn files_changed_at_commit() {
     ];
 
     let changed_files = repo
+        .to_info()
         .list_files_changed_at("a7cf222c46ad32f2802e79e1935f753a27adc9e8")
         .unwrap()
         .unwrap();
@@ -35,12 +37,14 @@ fn files_not_changed_at_commit() {
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
     let expected_files = vec!["README.md", "src/clone.rs", "src/info.rs"];
 
     let changed_files = repo
+        .to_info()
         .list_files_changed_at("a7cf222c46ad32f2802e79e1935f753a27adc9e8")
         .unwrap()
         .unwrap();
@@ -56,6 +60,7 @@ fn files_changed_between_2_commits() {
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
@@ -70,6 +75,7 @@ fn files_changed_between_2_commits() {
     ];
 
     for f in repo
+        .to_info()
         .list_files_changed_between(
             "9c6c5e65c3590e299316d34718674de333bdd9c8",
             "c097ad2a8c07bf2e3df64e6e603eee0473ad8133",
@@ -88,12 +94,14 @@ fn files_not_changed_between_2_commits() {
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
     let files = vec!["LICENSE", ".gitignore"];
 
     for f in repo
+        .to_info()
         .list_files_changed_between(
             "9c6c5e65c3590e299316d34718674de333bdd9c8",
             "c097ad2a8c07bf2e3df64e6e603eee0473ad8133",
@@ -112,10 +120,12 @@ fn dir_changed_between_2_commits() {
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
     assert!(repo
+        .to_info()
         .has_path_changed_between("src", "9c6c5e", "c097ad")
         .unwrap());
 }
@@ -126,8 +136,9 @@ fn non_existent_dir_changed() {
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
-    assert!(!repo.has_path_changed("not_a_dir").unwrap());
+    assert!(!repo.to_info().has_path_changed("not_a_dir").unwrap());
 }

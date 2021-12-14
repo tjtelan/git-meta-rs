@@ -21,9 +21,45 @@ pub enum GitCredentials {
 
 /// Use `GitRepo::open()` to read a repo on disk. `GitRepo::new()` if you need to clone the repo.
 ///
-/// Clone a repo with `.git_clone()` or `git_clone_shallow()`
+/// Use `GitRepoCloneRequest` to clone repo to disk
+///
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GitRepo {
+    /// The remote url of the repo
+    pub url: GitUrl,
+    /// The current commit. This can be configured prior to clone with `with_commit()`
+    pub head: Option<GitCommitMeta>,
+    /// The ssh key or user/pass needed to clone for private repo
+    pub credentials: Option<GitCredentials>,
+    /// The name of the remote branch.
+    /// This can be configured with a local branch name prior to clone with `with_branch()`.
+    pub branch: Option<String>,
+    /// The location of the repo on disk
+    pub path: Option<PathBuf>,
+}
+
+/// Represents request to clone repo to disk
+///
+/// After cloning, returns a `GitRepo`
+///
+/// Clone a repo with `.git_clone()` or `git_clone_shallow()`
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GitRepoCloneRequest {
+    /// The remote url of the repo
+    pub url: GitUrl,
+    /// The current commit. This can be configured prior to clone with `with_commit()`
+    pub head: Option<GitCommitMeta>,
+    /// The ssh key or user/pass needed to clone for private repo
+    pub credentials: Option<GitCredentials>,
+    /// The name of the remote branch.
+    /// This can be configured with a local branch name prior to clone with `with_branch()`.
+    pub branch: Option<String>,
+    /// The location of the repo on disk
+    pub path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GitRepoInfo {
     /// The remote url of the repo
     pub url: GitUrl,
     /// The current commit. This can be configured prior to clone with `with_commit()`

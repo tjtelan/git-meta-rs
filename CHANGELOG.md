@@ -1,3 +1,7 @@
+# [0.5.0](https://github.com/tjtelan/git-meta-rs/compare/v0.3.0...v0.4.0) (2021-12-13)
+- Add `GitRepoCloneRequest` and moved repo cloning code from `GitRepo`
+- Add support to `GitRepo` for opening repo filepath w/ local-only branches
+
 # [0.4.0](https://github.com/tjtelan/git-meta-rs/compare/v0.3.0...v0.4.0) (2021-11-13)
 - Fix clippy warnings
 - Replace panic behavior with returning `Err()`

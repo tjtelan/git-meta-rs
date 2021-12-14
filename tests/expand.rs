@@ -7,11 +7,12 @@ fn partial_on_deep_clone() {
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
     assert_eq!(
-        repo.expand_partial_commit_id("c097ad2").unwrap(),
+        repo.to_info().expand_partial_commit_id("c097ad2").unwrap(),
         "c097ad2a8c07bf2e3df64e6e603eee0473ad8133"
     );
 }
@@ -22,8 +23,12 @@ fn partial_on_shallow_clone() {
 
     let repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone_shallow(&tempdir)
         .unwrap();
 
-    assert_eq!(repo.expand_partial_commit_id("c097ad2").is_ok(), false);
+    assert_eq!(
+        repo.to_info().expand_partial_commit_id("c097ad2").is_ok(),
+        false
+    );
 }

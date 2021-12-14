@@ -13,7 +13,7 @@ fn main() -> Result<()> {
 
     let repo = GitRepo::open(current_dir, None, None)?;
 
-    println!("{:?}", repo.expand_partial_commit_id("c097ad2"));
+    println!("{:?}", repo.to_info().expand_partial_commit_id("c097ad2"));
 
     Ok(())
 }

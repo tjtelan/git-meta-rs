@@ -1,14 +1,24 @@
-use crate::{BranchHeads, GitCommitMeta, GitRepo};
+use crate::{
+    BranchHeads, GitCommitMeta, GitCredentials, GitRepo, GitRepoCloneRequest, GitRepoInfo,
+};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Context, ContextCompat, Result};
-use git2::{Branch, BranchType, Commit, Oid, Repository};
+use git2::{Branch, BranchType, Commit, Cred, Oid, Repository};
 use log::debug;
 use mktemp::Temp;
 
-impl GitRepo {
+impl GitRepoInfo {
+    pub fn to_repo(&self) -> GitRepo {
+        self.into()
+    }
+
+    pub fn to_clone(&self) -> GitRepoCloneRequest {
+        self.into()
+    }
+
     /// Return the remote name from the given `git2::Repository`
     /// For example, the typical remote name: `origin`
     pub fn get_remote_name(&self, r: &git2::Repository) -> Result<String> {
@@ -49,7 +59,10 @@ impl GitRepo {
             GitRepo::to_repository_from_path(p)?
         } else {
             // Shallow clone
-            self.git_clone_shallow(temp_dir.as_path())?
+
+            let clone: GitRepoCloneRequest = self.into();
+            clone
+                .git_clone_shallow(temp_dir.as_path())?
                 .to_repository()?
         };
 
@@ -184,21 +197,27 @@ impl GitRepo {
     }
 
     /// Return the remote url from the given Repository
-    pub fn remote_url_from_repository(r: &Repository) -> Result<String> {
+    ///
+    /// Returns `None` if current branch is local only
+    pub fn remote_url_from_repository(r: &Repository) -> Result<Option<String>> {
         // Get the name of the remote from the Repository
-        let remote_name = GitRepo::remote_name_from_repository(r)?;
+        let remote_name = GitRepoInfo::remote_name_from_repository(r)?;
 
-        let remote_url: String = if let Some(url) = r.find_remote(&remote_name)?.url() {
-            url.chars().collect()
+        if let Some(remote) = remote_name {
+            let remote_url: String = if let Some(url) = r.find_remote(&remote)?.url() {
+                url.chars().collect()
+            } else {
+                return Err(eyre!("Unable to extract repo url from remote"));
+            };
+
+            Ok(Some(remote_url))
         } else {
-            return Err(eyre!("Unable to extract repo url from remote"));
-        };
-
-        Ok(remote_url)
+            Ok(None)
+        }
     }
 
     /// Return the remote name from the given Repository
-    fn remote_name_from_repository(r: &Repository) -> Result<String> {
+    fn remote_name_from_repository(r: &Repository) -> Result<Option<String>> {
         let local_branch = r.head().and_then(|h| h.resolve())?;
         let local_branch_name = if let Some(name) = local_branch.name() {
             name
@@ -208,43 +227,51 @@ impl GitRepo {
 
         let upstream_remote_name_buf =
             if let Ok(remote) = r.branch_upstream_remote(local_branch_name) {
-                remote
+                Some(remote)
             } else {
-                return Err(eyre!("Could not retrieve remote name from local branch"));
+                //return Err(eyre!("Could not retrieve remote name from local branch"));
+                None
             };
 
-        let remote_name = if let Some(name) = upstream_remote_name_buf.as_str() {
-            name.to_string()
+        if let Some(remote) = upstream_remote_name_buf {
+            let remote_name = if let Some(name) = remote.as_str() {
+                Some(name.to_string())
+            } else {
+                return Err(eyre!("Remote name not valid utf-8"));
+            };
+
+            debug!("Remote name: {:?}", &remote_name);
+
+            Ok(remote_name)
         } else {
-            return Err(eyre!("Remote name not valid utf-8"));
-        };
-
-        debug!("Remote name: {:?}", &remote_name);
-
-        Ok(remote_name)
+            Ok(None)
+        }
     }
 
     /// Returns the remote url after opening and validating repo from the local path
-    pub fn git_remote_from_path(path: &Path) -> Result<String> {
+    pub fn git_remote_from_path(path: &Path) -> Result<Option<String>> {
         let r = GitRepo::to_repository_from_path(path)?;
-        GitRepo::remote_url_from_repository(&r)
+        GitRepoInfo::remote_url_from_repository(&r)
     }
 
     /// Returns the remote url from the `git2::Repository` struct
-    pub fn git_remote_from_repo(local_repo: &Repository) -> Result<String> {
-        GitRepo::remote_url_from_repository(local_repo)
+    pub fn git_remote_from_repo(local_repo: &Repository) -> Result<Option<String>> {
+        GitRepoInfo::remote_url_from_repository(local_repo)
     }
 
+    // TODO: Make this take `self` again
     /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit1` and `commit2`
     pub fn list_files_changed_between<S: AsRef<str>>(
         &self,
         commit1: S,
         commit2: S,
     ) -> Result<Option<Vec<PathBuf>>> {
-        let repo = self.to_repository()?;
+        let repo = self.to_repo();
 
         let commit1 = self.expand_partial_commit_id(commit1.as_ref())?;
         let commit2 = self.expand_partial_commit_id(commit2.as_ref())?;
+
+        let repo = repo.to_repository()?;
 
         let oid1 = Oid::from_str(&commit1)?;
         let oid2 = Oid::from_str(&commit2)?;
@@ -277,14 +304,17 @@ impl GitRepo {
         Ok(None)
     }
 
+    // TODO: Make this take `self` again
     /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit` and `commit~1` (the previous commit)
     pub fn list_files_changed_at<S: AsRef<str>>(&self, commit: S) -> Result<Option<Vec<PathBuf>>> {
-        let repo = self.to_repository()?;
+        let repo = self.to_repo();
 
         let commit = self.expand_partial_commit_id(commit.as_ref())?;
 
+        let git2_repo = repo.to_repository()?;
+
         let oid = Oid::from_str(&commit)?;
-        let git2_commit = repo.find_commit(oid)?;
+        let git2_commit = git2_repo.find_commit(oid)?;
 
         let mut changed_files = Vec::new();
 
@@ -305,8 +335,11 @@ impl GitRepo {
         }
     }
 
+    // TODO: Make this take `self` again
     /// Takes in a partial commit SHA-1, and attempts to expand to the full 40-char commit id
     pub fn expand_partial_commit_id<S: AsRef<str>>(&self, partial_commit_id: S) -> Result<String> {
+        let repo: GitRepo = self.to_repo();
+
         // Don't need to do anything if the commit is already complete
         // I guess the only issue is not validating it exists. Is that ok?
         if partial_commit_id.as_ref().len() == 40 {
@@ -314,13 +347,13 @@ impl GitRepo {
         }
 
         // We can't reliably succeed if repo is a shallow clone
-        if self.to_repository()?.is_shallow() {
+        if repo.to_repository()?.is_shallow() {
             return Err(eyre!(
                 "No support for partial commit id expand on shallow clones"
             ));
         }
 
-        let repo = self.to_repository()?;
+        let repo = repo.to_repository()?;
 
         let extended_commit = hex::encode(
             repo.revparse_single(partial_commit_id.as_ref())?
@@ -332,15 +365,17 @@ impl GitRepo {
         Ok(extended_commit)
     }
 
+    // TODO: Make this take `self` again
     /// Checks the list of files changed between last 2 commits (`HEAD` and `HEAD~1`).
     /// Returns `bool` depending on whether any changes were made in `path`.
     /// A `path` should be relative to the repo root. Can be a file or a directory.
     pub fn has_path_changed<P: AsRef<Path>>(&self, path: P) -> Result<bool> {
-        let repo = self.to_repository().wrap_err("Could not open repo")?;
+        let repo = self.to_repo();
+        let git2_repo = repo.to_repository().wrap_err("Could not open repo")?;
 
         // Get `HEAD~1` commit
         // This could actually be multiple parent commits, if merge commit
-        let head = repo
+        let head = git2_repo
             .head()
             .wrap_err("Could not get HEAD ref")?
             .peel_to_commit()
@@ -357,6 +392,7 @@ impl GitRepo {
         Ok(false)
     }
 
+    // TODO: Make this take `self` again
     /// Checks the list of files changed between 2 commits (`commit1` and `commit2`).
     /// Returns `bool` depending on whether any changes were made in `path`.
     /// A `path` should be relative to the repo root. Can be a file or a directory.
@@ -421,7 +457,8 @@ impl GitRepo {
         };
 
         // We can do a shallow clone, because we only want the newest history
-        let repo = if let Ok(gitrepo) = repo.git_clone_shallow(tempdir) {
+        let clone: GitRepoCloneRequest = repo.into();
+        let repo = if let Ok(gitrepo) = clone.git_clone_shallow(tempdir) {
             gitrepo
         } else {
             return Err(eyre!("Could not shallow clone dir"));
@@ -429,5 +466,67 @@ impl GitRepo {
 
         // If the HEAD commits don't match, we assume that `repo` is newer
         Ok(self.head != repo.head)
+    }
+
+    /// Builds a `git2::RemoteCallbacks` using `self.credentials` to be used
+    /// in authenticated calls to a remote repo
+    pub fn build_git2_remotecallback(&self) -> git2::RemoteCallbacks {
+        if let Some(cred) = self.credentials.clone() {
+            debug!("Before building callback: {:?}", &cred);
+
+            match cred {
+                GitCredentials::SshKey {
+                    username,
+                    public_key,
+                    private_key,
+                    passphrase,
+                } => {
+                    let mut cb = git2::RemoteCallbacks::new();
+
+                    cb.credentials(
+                        move |_, _, _| match (public_key.clone(), passphrase.clone()) {
+                            (None, None) => {
+                                Ok(Cred::ssh_key(&username, None, private_key.as_path(), None)
+                                    .expect("Could not create credentials object for ssh key"))
+                            }
+                            (None, Some(pp)) => Ok(Cred::ssh_key(
+                                &username,
+                                None,
+                                private_key.as_path(),
+                                Some(pp.as_ref()),
+                            )
+                            .expect("Could not create credentials object for ssh key")),
+                            (Some(pk), None) => Ok(Cred::ssh_key(
+                                &username,
+                                Some(pk.as_path()),
+                                private_key.as_path(),
+                                None,
+                            )
+                            .expect("Could not create credentials object for ssh key")),
+                            (Some(pk), Some(pp)) => Ok(Cred::ssh_key(
+                                &username,
+                                Some(pk.as_path()),
+                                private_key.as_path(),
+                                Some(pp.as_ref()),
+                            )
+                            .expect("Could not create credentials object for ssh key")),
+                        },
+                    );
+
+                    cb
+                }
+                GitCredentials::UserPassPlaintext { username, password } => {
+                    let mut cb = git2::RemoteCallbacks::new();
+                    cb.credentials(move |_, _, _| {
+                        Cred::userpass_plaintext(username.as_str(), password.as_str())
+                    });
+
+                    cb
+                }
+            }
+        } else {
+            // No credentials. Repo is public
+            git2::RemoteCallbacks::new()
+        }
     }
 }

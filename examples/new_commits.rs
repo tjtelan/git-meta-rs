@@ -6,8 +6,9 @@ fn main() -> Result<()> {
     let tempdir = Temp::new_dir()?;
 
     // We're just using this for cloning
-    let _clone_repo =
-        GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")?.git_clone(&tempdir)?;
+    let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")?
+        .to_clone()
+        .git_clone(&tempdir)?;
 
     let repo = GitRepo::open(
         tempdir.to_path_buf(),
@@ -15,7 +16,10 @@ fn main() -> Result<()> {
         Some("f6eb3d6b7998989a48ed1024313fcac401c175fb".to_string()),
     )?;
 
-    println!("Are there new commits?: {:?}", repo.new_commits_exist());
+    println!(
+        "Are there new commits?: {:?}",
+        repo.to_info().new_commits_exist()
+    );
 
     Ok(())
 }

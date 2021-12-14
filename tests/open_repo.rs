@@ -7,6 +7,7 @@ fn deep_clone_defaults() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
@@ -21,6 +22,7 @@ fn deep_clone_by_branch() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
@@ -35,6 +37,7 @@ fn deep_clone_by_id() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
@@ -54,6 +57,7 @@ fn deep_clone_by_branch_id() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
@@ -73,6 +77,7 @@ fn shallow_clone_defaults() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone_shallow(&tempdir)
         .unwrap();
 
@@ -87,6 +92,7 @@ fn shallow_clone_by_branch() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone_shallow(&tempdir)
         .unwrap();
 
@@ -101,6 +107,7 @@ fn shallow_clone_by_id() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone_shallow(&tempdir)
         .unwrap();
 
@@ -121,6 +128,7 @@ fn shallow_clone_by_branch_id() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone_shallow(&tempdir)
         .unwrap();
 
