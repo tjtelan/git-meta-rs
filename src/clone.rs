@@ -6,7 +6,7 @@ use crate::{GitCredentials, GitRepo, GitRepoCloneRequest, GitRepoInfo};
 use git_url_parse::GitUrl;
 
 use color_eyre::eyre::Result;
-use log::{debug, info};
+use tracing::{debug, info};
 
 impl GitRepoCloneRequest {
     /// Create a new `GitRepo` with `url`.

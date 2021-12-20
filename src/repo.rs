@@ -7,7 +7,7 @@ use git_url_parse::GitUrl;
 use git2::{Branch, Commit, Repository};
 
 use color_eyre::eyre::{eyre, Result};
-use log::debug;
+use tracing::debug;
 
 impl GitRepo {
     /// Returns a `GitRepo` after parsing metadata from a repo

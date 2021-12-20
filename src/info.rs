@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Context, ContextCompat, Result};
 use git2::{Branch, BranchType, Commit, Cred, Oid, Repository};
-use log::debug;
 use mktemp::Temp;
+use tracing::debug;
 
 impl GitRepoInfo {
     pub fn to_repo(&self) -> GitRepo {
