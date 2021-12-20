@@ -7,6 +7,7 @@ fn new_commits_deep_clone() {
 
     let _clone_repo = GitRepo::new("https://github.com/tjtelan/git-meta-rs.git")
         .unwrap()
+        .to_clone()
         .git_clone(&tempdir)
         .unwrap();
 
@@ -17,5 +18,5 @@ fn new_commits_deep_clone() {
     )
     .unwrap();
 
-    assert!(repo.new_commits_exist().unwrap());
+    assert!(repo.to_info().new_commits_exist().unwrap());
 }

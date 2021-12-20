@@ -21,12 +21,13 @@ fn main() -> Result<()> {
 
     println!(
         "Files that have changes at commit: a7cf222c46ad32f2802e79e1935f753a27adc9e8\n{:?}",
-        repo.list_files_changed_at("a7cf222c46ad32f2802e79e1935f753a27adc9e8")
+        repo.to_info()
+            .list_files_changed_at("a7cf222c46ad32f2802e79e1935f753a27adc9e8")
     );
 
     println!(
         "Files that have changed:\n{:?}",
-        repo.list_files_changed_between(
+        repo.to_info().list_files_changed_between(
             "9c6c5e65c3590e299316d34718674de333bdd9c8",
             "c097ad2a8c07bf2e3df64e6e603eee0473ad8133"
         )
@@ -34,14 +35,17 @@ fn main() -> Result<()> {
 
     println!(
         "Has Cargo.toml changed?: {:?}",
-        repo.has_path_changed("Cargo.toml")
+        repo.to_info().has_path_changed("Cargo.toml")
     );
 
-    println!("Has src changed?: {:?}", repo.has_path_changed("src"));
+    println!(
+        "Has src changed?: {:?}",
+        repo.to_info().has_path_changed("src")
+    );
 
     println!(
         "Has LICENSE changed?: {:?}",
-        repo.has_path_changed("LICENSE")
+        repo.to_info().has_path_changed("LICENSE")
     );
 
     Ok(())

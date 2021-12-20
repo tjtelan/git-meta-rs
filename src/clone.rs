@@ -1,15 +1,69 @@
-use crate::{GitCredentials, GitRepo};
-
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use color_eyre::eyre::Result;
-use log::{debug, info};
+use crate::{GitCredentials, GitRepo, GitRepoCloneRequest, GitRepoInfo};
+use git_url_parse::GitUrl;
 
-impl GitRepo {
+use color_eyre::eyre::Result;
+use tracing::{debug, info};
+
+impl GitRepoCloneRequest {
+    /// Create a new `GitRepo` with `url`.
+    /// Use along with `with_*` methods to set other fields of `GitRepo`.
+    /// Use `GitRepoCloner` if you need to clone the repo, and convert back with `GitRepo.into()`
+    pub fn new<S: AsRef<str>>(url: S) -> Result<Self> {
+        Ok(Self {
+            url: GitUrl::parse(url.as_ref()).expect("url failed to parse as GitUrl"),
+            credentials: None,
+            head: None,
+            branch: None,
+            path: None,
+        })
+    }
+
+    /// Set the location of `GitRepo` on the filesystem
+    pub fn with_path(mut self, path: PathBuf) -> Self {
+        // We want to get the absolute path of the directory of the repo
+        self.path = Some(fs::canonicalize(path).expect("Directory was not found"));
+        self
+    }
+
+    /// Intended to be set with the remote name branch of GitRepo
+    pub fn with_branch(mut self, branch: Option<String>) -> Self {
+        if let Some(b) = branch {
+            self.branch = Some(b);
+        }
+        self
+    }
+
+    // TODO: Fix this for clone
+    ///// Reinit `GitRepo` with commit id
+    //pub fn with_commit(mut self, commit_id: Option<String>) -> Self {
+    //    self = GitRepo::open(self.path.expect("No path set"), self.branch, commit_id)
+    //        .expect("Unable to open GitRepo with commit id");
+    //    self
+    //}
+
+    /// Set `GitCredentials` for private repos.
+    /// `None` indicates public repo
+    pub fn with_credentials(mut self, creds: Option<GitCredentials>) -> Self {
+        self.credentials = creds;
+        self
+    }
+
+    pub fn to_repo(&self) -> GitRepo {
+        self.into()
+    }
+
+    pub fn to_info(&self) -> GitRepoInfo {
+        self.into()
+    }
+
     // TODO: Can we make this mut self?
     pub fn git_clone<P: AsRef<Path>>(&self, target: P) -> Result<GitRepo> {
-        let cb = self.build_git2_remotecallback();
+        let git_info: GitRepoInfo = self.into();
+        let cb = git_info.build_git2_remotecallback();
 
         let mut builder = git2::build::RepoBuilder::new();
         let mut fetch_options = git2::FetchOptions::new();
