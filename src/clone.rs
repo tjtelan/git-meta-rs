@@ -81,7 +81,7 @@ impl GitRepoCloneRequest {
         };
 
         // Ensure we don't lose the credentials while updating
-        let mut git_repo: GitRepo = repo.into();
+        let mut git_repo: GitRepo = repo.try_into()?;
         git_repo = git_repo.with_credentials(self.credentials.clone());
 
         Ok(git_repo)

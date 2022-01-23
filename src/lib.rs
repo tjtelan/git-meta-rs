@@ -41,6 +41,7 @@
 //! *Note:* Shallow cloning requires `git` CLI to be installed
 
 use chrono::prelude::*;
+use color_eyre::eyre::Report;
 use git2::Repository;
 use hex::ToHex;
 
@@ -90,11 +91,11 @@ impl GitCommitMeta {
     }
 }
 
-impl From<Repository> for GitRepo {
-    /// Convert from `git2::Repository` to `GitRepo`.
-    fn from(repo: Repository) -> Self {
+impl TryFrom<Repository> for GitRepo {
+    type Error = Report;
+
+    fn try_from(repo: Repository) -> Result<Self, Self::Error> {
         GitRepo::open(repo.path().to_path_buf(), None, None)
-            .expect("Failed to convert Repository to GitRepo")
     }
 }
 
