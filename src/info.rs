@@ -162,35 +162,41 @@ impl GitRepoInfo {
     pub fn get_git2_branch<'repo>(
         r: &'repo Repository,
         local_branch: &Option<String>,
-    ) -> Result<Branch<'repo>> {
+    ) -> Result<Option<Branch<'repo>>> {
         match local_branch {
             Some(branch) => {
                 //println!("User passed branch: {:?}", branch);
-                let b = r.find_branch(branch, BranchType::Local)?;
-                debug!("Returning given branch: {:?}", &b.name());
-                Ok(b)
+                if let Ok(git2_branch) = r.find_branch(branch, BranchType::Local) {
+                    debug!("Returning given branch: {:?}", &git2_branch.name());
+                    Ok(Some(git2_branch))
+                } else {
+                    // If detached HEAD, we won't have a branch
+                    Ok(None)
+                }
             }
             None => {
                 // Getting the HEAD of the current
                 let head = r.head();
-                //let commit = head.unwrap().peel_to_commit();
-                //println!("{:?}", commit);
 
                 // Find the current local branch...
                 let local_branch = Branch::wrap(head?);
 
                 debug!("Returning HEAD branch: {:?}", local_branch.name()?);
 
-                let local_branch_name = if let Ok(Some(name)) = local_branch.name() {
-                    name
+                let maybe_local_branch_name = if let Ok(Some(name)) = local_branch.name() {
+                    Some(name)
                 } else {
-                    return Err(eyre!("Unable to return local branch name"));
+                    // This occurs when you check out commit (i.e., detached HEAD).
+                    None
                 };
 
-                // Convert git2::Error to Error
-                match r.find_branch(local_branch_name, BranchType::Local) {
-                    Ok(b) => Ok(b),
-                    Err(e) => Err(e.into()),
+                if let Some(local_branch_name) = maybe_local_branch_name {
+                    match r.find_branch(local_branch_name, BranchType::Local) {
+                        Ok(b) => Ok(Some(b)),
+                        Err(_e) => Ok(None),
+                    }
+                } else {
+                    Ok(None)
                 }
             }
         }

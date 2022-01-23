@@ -20,9 +20,13 @@ impl GitRepo {
         let remote_url = GitRepoInfo::git_remote_from_repo(&local_repo)?;
 
         // Resolve the remote branch name, if possible
-        let working_branch_name = GitRepoInfo::get_git2_branch(&local_repo, &branch)?
-            .name()?
-            .map(str::to_string);
+        let working_branch_name =
+            if let Ok(Some(git2_branch)) = GitRepoInfo::get_git2_branch(&local_repo, &branch) {
+                git2_branch.name()?.map(str::to_string)
+            } else {
+                // Detached HEAD
+                None
+            };
 
         // We don't support digging around in past commits if the repo is shallow
         if let Some(_c) = &commit_id {
@@ -31,6 +35,7 @@ impl GitRepo {
             }
         }
 
+        // This is essential for when we're in Detatched HEAD
         let commit = Self::get_git2_commit(&local_repo, &working_branch_name, &commit_id)?;
 
         if let Some(url) = remote_url {
@@ -135,13 +140,24 @@ impl GitRepo {
         branch: &Option<String>,
         commit_id: &Option<String>,
     ) -> Result<Option<Commit<'repo>>> {
-        let working_branch = GitRepoInfo::get_git2_branch(r, branch)?;
+        // If branch or commit not given, return the HEAD of `r`
+        if let (None, None) = (branch, commit_id) {
+            //return Err(eyre!("Need at least a branch or a commit id"));
+
+            // Do I need to verify that we're in detached head?
+            // if r.head_detached()? {}
+
+            return Ok(Some(r.head()?.peel_to_commit().expect(
+                "Unable to retrieve HEAD commit object from remote branch",
+            )));
+        }
 
         match commit_id {
             Some(id) => {
                 debug!("Commit provided. Using {}", id);
                 let commit = r.find_commit(git2::Oid::from_str(id)?)?;
 
+                // TODO: Verify if the commit is in the branch. If not, return Ok(None)
                 // Do we care about detatched HEAD?
                 //let _ = GitRepo::is_commit_in_branch(
                 //    r,
@@ -156,39 +172,50 @@ impl GitRepo {
             None => {
                 debug!("No commit provided. Attempting to use HEAD commit from remote branch");
 
-                match working_branch.upstream() {
-                    Ok(upstream_branch) => {
-                        let working_ref = upstream_branch.into_reference();
+                if branch.is_some() {
+                    if let Ok(Some(git2_branch)) = GitRepoInfo::get_git2_branch(r, branch) {
+                        match git2_branch.upstream() {
+                            Ok(upstream_branch) => {
+                                let working_ref = upstream_branch.into_reference();
 
-                        let commit = working_ref
-                            .peel_to_commit()
-                            .expect("Unable to retrieve HEAD commit object from remote branch");
+                                let commit = working_ref.peel_to_commit().expect(
+                                    "Unable to retrieve HEAD commit object from remote branch",
+                                );
 
-                        let _ = GitRepoInfo::is_commit_in_branch(
-                            r,
-                            &commit,
-                            &Branch::wrap(working_ref),
-                        );
+                                let _ = GitRepoInfo::is_commit_in_branch(
+                                    r,
+                                    &commit,
+                                    &Branch::wrap(working_ref),
+                                );
 
-                        Ok(Some(commit))
+                                Ok(Some(commit))
+                            }
+                            // This match-arm supports branches that are local-only
+                            Err(_e) => {
+                                debug!(
+                                    "No remote branch found. Using HEAD commit from local branch"
+                                );
+                                let working_ref = git2_branch.into_reference();
+
+                                let commit = working_ref.peel_to_commit().expect(
+                                    "Unable to retrieve HEAD commit object from local branch",
+                                );
+
+                                let _ = GitRepoInfo::is_commit_in_branch(
+                                    r,
+                                    &commit,
+                                    &Branch::wrap(working_ref),
+                                );
+
+                                Ok(Some(commit))
+                            }
+                        }
+                    } else {
+                        // This happens if the branch doesn't exist. Should this be Err()?
+                        Ok(None)
                     }
-                    // This match-arm supports branches that are local-only
-                    Err(_e) => {
-                        debug!("No remote branch found. Using HEAD commit from local branch");
-                        let working_ref = working_branch.into_reference();
-
-                        let commit = working_ref
-                            .peel_to_commit()
-                            .expect("Unable to retrieve HEAD commit object from local branch");
-
-                        let _ = GitRepoInfo::is_commit_in_branch(
-                            r,
-                            &commit,
-                            &Branch::wrap(working_ref),
-                        );
-
-                        Ok(Some(commit))
-                    }
+                } else {
+                    unreachable!("We should have returned Err() early if both commit and branch not provided. We need one.")
                 }
             }
         }

@@ -1,3 +1,6 @@
+# [0.6.0](https://github.com/tjtelan/git-meta-rs/compare/v0.5.0...v0.6.0) (2022-01-00)
+- Support for detached HEAD ([#8](https://github.com/tjtelan/git-meta-rs/issues/8))
+- Convert unhandled `unwrap` and `expect` to fail more gracefully with returning `Err()`
 # [0.5.0](https://github.com/tjtelan/git-meta-rs/compare/v0.4.0...v0.5.0) (2021-12-19)
 - Add `GitRepoCloneRequest` and moved repo cloning code from `GitRepo`
 - Add support to `GitRepo` for opening repo filepath w/ local-only branches
