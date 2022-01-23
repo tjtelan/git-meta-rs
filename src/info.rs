@@ -265,7 +265,6 @@ impl GitRepoInfo {
         GitRepoInfo::remote_url_from_repository(local_repo)
     }
 
-    // TODO: Make this take `self` again
     /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit1` and `commit2`
     pub fn list_files_changed_between<S: AsRef<str>>(
         &self,
@@ -367,7 +366,6 @@ impl GitRepoInfo {
         Ok(extended_commit)
     }
 
-    // TODO: Make this take `self` again
     /// Checks the list of files changed between last 2 commits (`HEAD` and `HEAD~1`).
     /// Returns `bool` depending on whether any changes were made in `path`.
     /// A `path` should be relative to the repo root. Can be a file or a directory.
@@ -394,7 +392,6 @@ impl GitRepoInfo {
         Ok(false)
     }
 
-    // TODO: Make this take `self` again
     /// Checks the list of files changed between 2 commits (`commit1` and `commit2`).
     /// Returns `bool` depending on whether any changes were made in `path`.
     /// A `path` should be relative to the repo root. Can be a file or a directory.

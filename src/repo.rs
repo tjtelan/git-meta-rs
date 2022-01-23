@@ -167,8 +167,6 @@ impl GitRepo {
     ) -> Result<Option<Commit<'repo>>> {
         // If branch or commit not given, return the HEAD of `r`
         if let (None, None) = (branch, commit_id) {
-            //return Err(eyre!("Need at least a branch or a commit id"));
-
             // Do I need to verify that we're in detached head?
             // if r.head_detached()? {}
 
