@@ -73,7 +73,7 @@ impl GitRepoCloneRequest {
     // TODO: Can we make this mut self?
     pub fn git_clone<P: AsRef<Path>>(&self, target: P) -> Result<GitRepo> {
         let git_info: GitRepoInfo = self.into();
-        let cb = git_info.build_git2_remotecallback();
+        let cb = git_info.build_git2_remotecallback()?;
 
         let mut builder = git2::build::RepoBuilder::new();
         let mut fetch_options = git2::FetchOptions::new();
