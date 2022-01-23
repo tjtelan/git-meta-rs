@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use crate::{GitCredentials, GitRepo, GitRepoCloneRequest, GitRepoInfo};
 use git_url_parse::GitUrl;
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use tracing::{debug, info};
 
 impl GitRepoCloneRequest {
@@ -13,8 +13,14 @@ impl GitRepoCloneRequest {
     /// Use along with `with_*` methods to set other fields of `GitRepo`.
     /// Use `GitRepoCloner` if you need to clone the repo, and convert back with `GitRepo.into()`
     pub fn new<S: AsRef<str>>(url: S) -> Result<Self> {
+        let url = if let Ok(u) = GitUrl::parse(url.as_ref()) {
+            u
+        } else {
+            return Err(eyre!("url failed to parse as GitUrl"));
+        };
+
         Ok(Self {
-            url: GitUrl::parse(url.as_ref()).expect("url failed to parse as GitUrl"),
+            url,
             credentials: None,
             head: None,
             branch: None,
@@ -23,10 +29,14 @@ impl GitRepoCloneRequest {
     }
 
     /// Set the location of `GitRepo` on the filesystem
-    pub fn with_path(mut self, path: PathBuf) -> Self {
+    pub fn with_path(mut self, path: PathBuf) -> Result<Self> {
         // We want to get the absolute path of the directory of the repo
-        self.path = Some(fs::canonicalize(path).expect("Directory was not found"));
-        self
+        self.path = if let Ok(p) = fs::canonicalize(path) {
+            Some(p)
+        } else {
+            return Err(eyre!("Directory was not found"));
+        };
+        Ok(self)
     }
 
     /// Intended to be set with the remote name branch of GitRepo
@@ -77,7 +87,7 @@ impl GitRepoCloneRequest {
 
         let repo = match builder.clone(&self.url.to_string(), target.as_ref()) {
             Ok(repo) => repo,
-            Err(e) => panic!("failed to clone: {}", e),
+            Err(e) => return Err(eyre!("failed to clone: {}", e)),
         };
 
         // Ensure we don't lose the credentials while updating
@@ -100,29 +110,35 @@ impl GitRepoCloneRequest {
                     let mut parsed_uri = self.url.trim_auth();
                     parsed_uri.user = Some(username.to_string());
 
-                    let shell_clone_command = Command::new("git")
+                    let privkey_path =
+                        if let Ok(path) = private_key.clone().into_os_string().into_string() {
+                            path
+                        } else {
+                            return Err(eyre!("Couldn't convert path to string"));
+                        };
+
+                    let shell_clone_command = if let Ok(spawn) = Command::new("git")
                         .arg("clone")
                         .arg(format!("{}", parsed_uri))
                         .arg(format!("{}", target.as_ref().display()))
                         .arg("--no-single-branch")
                         .arg("--depth=1")
                         .arg("--config")
-                        .arg(format!(
-                            "core.sshcommand=ssh -i {privkey_path}",
-                            privkey_path = private_key
-                                .clone()
-                                .into_os_string()
-                                .into_string()
-                                .expect("Couldn't convert path to string")
-                        ))
+                        .arg(format!("core.sshcommand=ssh -i {privkey_path}"))
                         .stdout(Stdio::piped())
                         .stderr(Stdio::null())
                         .spawn()
-                        .expect("failed to run git clone");
+                    {
+                        spawn
+                    } else {
+                        return Err(eyre!("failed to run git clone"));
+                    };
 
-                    let clone_out = shell_clone_command
-                        .wait_with_output()
-                        .expect("failed to open stdout");
+                    let clone_out = if let Ok(wait) = shell_clone_command.wait_with_output() {
+                        wait
+                    } else {
+                        return Err(eyre!("failed to open stdout"));
+                    };
 
                     debug!("Clone output: {:?}", clone_out);
 
@@ -134,18 +150,19 @@ impl GitRepoCloneRequest {
                         passphrase,
                     };
 
-                    GitRepo::open(target.as_ref().to_path_buf(), None, None)
-                        .unwrap_or_else(|_| {
-                            panic!("Failed to open shallow clone dir: {:?}", clone_out)
-                        })
-                        .with_credentials(Some(creds))
+                    if let Ok(repo) = GitRepo::open(target.as_ref().to_path_buf(), None, None) {
+                        repo
+                    } else {
+                        return Err(eyre!("Failed to open shallow clone dir: {:?}", clone_out));
+                    }
+                    .with_credentials(Some(creds))
                 }
                 crate::GitCredentials::UserPassPlaintext { username, password } => {
                     let mut cli_remote_url = self.url.clone();
                     cli_remote_url.user = Some(username.to_string());
                     cli_remote_url.token = Some(password.to_string());
 
-                    let shell_clone_command = Command::new("git")
+                    let shell_clone_command = if let Ok(spawn) = Command::new("git")
                         .arg("clone")
                         .arg(format!("{}", cli_remote_url))
                         .arg(format!("{}", target.as_ref().display()))
@@ -154,18 +171,27 @@ impl GitRepoCloneRequest {
                         .stdout(Stdio::piped())
                         .stderr(Stdio::null())
                         .spawn()
-                        .expect("Failed to run git clone");
+                    {
+                        spawn
+                    } else {
+                        return Err(eyre!("Failed to run git clone"));
+                    };
 
-                    let clone_out = shell_clone_command.stdout.expect("Failed to open stdout");
+                    let clone_out = if let Some(stdout) = shell_clone_command.stdout {
+                        stdout
+                    } else {
+                        return Err(eyre!("Failed to open stdout"));
+                    };
 
                     // Re-create the GitCredentials
                     let creds = GitCredentials::UserPassPlaintext { username, password };
 
-                    GitRepo::open(target.as_ref().to_path_buf(), None, None)
-                        .unwrap_or_else(|_| {
-                            panic!("Failed to open shallow clone dir: {:?}", clone_out)
-                        })
-                        .with_credentials(Some(creds))
+                    if let Ok(repo) = GitRepo::open(target.as_ref().to_path_buf(), None, None) {
+                        repo
+                    } else {
+                        return Err(eyre!("Failed to open shallow clone dir: {:?}", clone_out));
+                    }
+                    .with_credentials(Some(creds))
                 }
             }
         } else {
@@ -174,7 +200,7 @@ impl GitRepoCloneRequest {
             info!("Url: {}", format!("{}", parsed_uri));
             info!("Directory: {}", format!("{}", target.as_ref().display()));
 
-            let shell_clone_command = Command::new("git")
+            let shell_clone_command = if let Ok(spawn) = Command::new("git")
                 .arg("clone")
                 .arg(format!("{}", parsed_uri))
                 .arg(format!("{}", target.as_ref().display()))
@@ -183,15 +209,24 @@ impl GitRepoCloneRequest {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
                 .spawn()
-                .expect("Failed to run git clone");
+            {
+                spawn
+            } else {
+                return Err(eyre!("Failed to run git clone"));
+            };
 
-            let clone_out = shell_clone_command
-                .wait_with_output()
-                .expect("Failed to wait for output")
-                .stdout;
+            let clone_out = if let Ok(stdout) = shell_clone_command.wait_with_output() {
+                stdout
+            } else {
+                return Err(eyre!("Failed to wait for output"));
+            }
+            .stdout;
 
-            GitRepo::open(target.as_ref().to_path_buf(), None, None)
-                .unwrap_or_else(|_| panic!("Failed to open shallow clone dir: {:?}", clone_out))
+            if let Ok(repo) = GitRepo::open(target.as_ref().to_path_buf(), None, None) {
+                repo
+            } else {
+                return Err(eyre!("Failed to open shallow clone dir: {:?}", clone_out));
+            }
         };
 
         Ok(repo)
