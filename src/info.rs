@@ -88,7 +88,7 @@ impl GitRepoInfo {
         // Connect to the remote and call the printing function for each of the
         // remote references.
         let connection =
-            if let Ok(conn) = remote.connect_auth(git2::Direction::Fetch, Some(cb), None) {
+            if let Ok(conn) = remote.connect_auth(git2::Direction::Fetch, Some(cb?), None) {
                 conn
             } else {
                 return Err(eyre!("Unable to connect to git repo"));
@@ -162,35 +162,41 @@ impl GitRepoInfo {
     pub fn get_git2_branch<'repo>(
         r: &'repo Repository,
         local_branch: &Option<String>,
-    ) -> Result<Branch<'repo>> {
+    ) -> Result<Option<Branch<'repo>>> {
         match local_branch {
             Some(branch) => {
                 //println!("User passed branch: {:?}", branch);
-                let b = r.find_branch(branch, BranchType::Local)?;
-                debug!("Returning given branch: {:?}", &b.name());
-                Ok(b)
+                if let Ok(git2_branch) = r.find_branch(branch, BranchType::Local) {
+                    debug!("Returning given branch: {:?}", &git2_branch.name());
+                    Ok(Some(git2_branch))
+                } else {
+                    // If detached HEAD, we won't have a branch
+                    Ok(None)
+                }
             }
             None => {
                 // Getting the HEAD of the current
                 let head = r.head();
-                //let commit = head.unwrap().peel_to_commit();
-                //println!("{:?}", commit);
 
                 // Find the current local branch...
                 let local_branch = Branch::wrap(head?);
 
                 debug!("Returning HEAD branch: {:?}", local_branch.name()?);
 
-                let local_branch_name = if let Ok(Some(name)) = local_branch.name() {
-                    name
+                let maybe_local_branch_name = if let Ok(Some(name)) = local_branch.name() {
+                    Some(name)
                 } else {
-                    return Err(eyre!("Unable to return local branch name"));
+                    // This occurs when you check out commit (i.e., detached HEAD).
+                    None
                 };
 
-                // Convert git2::Error to Error
-                match r.find_branch(local_branch_name, BranchType::Local) {
-                    Ok(b) => Ok(b),
-                    Err(e) => Err(e.into()),
+                if let Some(local_branch_name) = maybe_local_branch_name {
+                    match r.find_branch(local_branch_name, BranchType::Local) {
+                        Ok(b) => Ok(Some(b)),
+                        Err(_e) => Ok(None),
+                    }
+                } else {
+                    Ok(None)
                 }
             }
         }
@@ -259,7 +265,6 @@ impl GitRepoInfo {
         GitRepoInfo::remote_url_from_repository(local_repo)
     }
 
-    // TODO: Make this take `self` again
     /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit1` and `commit2`
     pub fn list_files_changed_between<S: AsRef<str>>(
         &self,
@@ -291,8 +296,6 @@ impl GitRepoInfo {
             };
 
             paths.push(delta_path.to_path_buf());
-            //let f = delta.new_file().path().unwrap().display();
-            //println!("{:?}", f );
             true
         })
         .wrap_err("File path not found in new commit to compare")?;
@@ -304,7 +307,6 @@ impl GitRepoInfo {
         Ok(None)
     }
 
-    // TODO: Make this take `self` again
     /// Returns a `Result<Option<Vec<PathBuf>>>` containing files changed between `commit` and `commit~1` (the previous commit)
     pub fn list_files_changed_at<S: AsRef<str>>(&self, commit: S) -> Result<Option<Vec<PathBuf>>> {
         let repo = self.to_repo();
@@ -335,7 +337,6 @@ impl GitRepoInfo {
         }
     }
 
-    // TODO: Make this take `self` again
     /// Takes in a partial commit SHA-1, and attempts to expand to the full 40-char commit id
     pub fn expand_partial_commit_id<S: AsRef<str>>(&self, partial_commit_id: S) -> Result<String> {
         let repo: GitRepo = self.to_repo();
@@ -365,7 +366,6 @@ impl GitRepoInfo {
         Ok(extended_commit)
     }
 
-    // TODO: Make this take `self` again
     /// Checks the list of files changed between last 2 commits (`HEAD` and `HEAD~1`).
     /// Returns `bool` depending on whether any changes were made in `path`.
     /// A `path` should be relative to the repo root. Can be a file or a directory.
@@ -392,7 +392,6 @@ impl GitRepoInfo {
         Ok(false)
     }
 
-    // TODO: Make this take `self` again
     /// Checks the list of files changed between 2 commits (`commit1` and `commit2`).
     /// Returns `bool` depending on whether any changes were made in `path`.
     /// A `path` should be relative to the repo root. Can be a file or a directory.
@@ -470,7 +469,7 @@ impl GitRepoInfo {
 
     /// Builds a `git2::RemoteCallbacks` using `self.credentials` to be used
     /// in authenticated calls to a remote repo
-    pub fn build_git2_remotecallback(&self) -> git2::RemoteCallbacks {
+    pub fn build_git2_remotecallback(&self) -> Result<git2::RemoteCallbacks> {
         if let Some(cred) = self.credentials.clone() {
             debug!("Before building callback: {:?}", &cred);
 
@@ -486,34 +485,66 @@ impl GitRepoInfo {
                     cb.credentials(
                         move |_, _, _| match (public_key.clone(), passphrase.clone()) {
                             (None, None) => {
-                                Ok(Cred::ssh_key(&username, None, private_key.as_path(), None)
-                                    .expect("Could not create credentials object for ssh key"))
+                                let key = if let Ok(key) =
+                                    Cred::ssh_key(&username, None, private_key.as_path(), None)
+                                {
+                                    key
+                                } else {
+                                    return Err(git2::Error::from_str(
+                                        "Could not create credentials object for ssh key",
+                                    ));
+                                };
+                                Ok(key)
                             }
-                            (None, Some(pp)) => Ok(Cred::ssh_key(
-                                &username,
-                                None,
-                                private_key.as_path(),
-                                Some(pp.as_ref()),
-                            )
-                            .expect("Could not create credentials object for ssh key")),
-                            (Some(pk), None) => Ok(Cred::ssh_key(
-                                &username,
-                                Some(pk.as_path()),
-                                private_key.as_path(),
-                                None,
-                            )
-                            .expect("Could not create credentials object for ssh key")),
-                            (Some(pk), Some(pp)) => Ok(Cred::ssh_key(
-                                &username,
-                                Some(pk.as_path()),
-                                private_key.as_path(),
-                                Some(pp.as_ref()),
-                            )
-                            .expect("Could not create credentials object for ssh key")),
+                            (None, Some(pp)) => {
+                                let key = if let Ok(key) = Cred::ssh_key(
+                                    &username,
+                                    None,
+                                    private_key.as_path(),
+                                    Some(pp.as_ref()),
+                                ) {
+                                    key
+                                } else {
+                                    return Err(git2::Error::from_str(
+                                        "Could not create credentials object for ssh key",
+                                    ));
+                                };
+                                Ok(key)
+                            }
+                            (Some(pk), None) => {
+                                let key = if let Ok(key) = Cred::ssh_key(
+                                    &username,
+                                    Some(pk.as_path()),
+                                    private_key.as_path(),
+                                    None,
+                                ) {
+                                    key
+                                } else {
+                                    return Err(git2::Error::from_str(
+                                        "Could not create credentials object for ssh key",
+                                    ));
+                                };
+                                Ok(key)
+                            }
+                            (Some(pk), Some(pp)) => {
+                                let key = if let Ok(key) = Cred::ssh_key(
+                                    &username,
+                                    Some(pk.as_path()),
+                                    private_key.as_path(),
+                                    Some(pp.as_ref()),
+                                ) {
+                                    key
+                                } else {
+                                    return Err(git2::Error::from_str(
+                                        "Could not create credentials object for ssh key",
+                                    ));
+                                };
+                                Ok(key)
+                            }
                         },
                     );
 
-                    cb
+                    Ok(cb)
                 }
                 GitCredentials::UserPassPlaintext { username, password } => {
                     let mut cb = git2::RemoteCallbacks::new();
@@ -521,12 +552,12 @@ impl GitRepoInfo {
                         Cred::userpass_plaintext(username.as_str(), password.as_str())
                     });
 
-                    cb
+                    Ok(cb)
                 }
             }
         } else {
             // No credentials. Repo is public
-            git2::RemoteCallbacks::new()
+            Ok(git2::RemoteCallbacks::new())
         }
     }
 }

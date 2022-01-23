@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,9 +21,13 @@ impl GitRepo {
         let remote_url = GitRepoInfo::git_remote_from_repo(&local_repo)?;
 
         // Resolve the remote branch name, if possible
-        let working_branch_name = GitRepoInfo::get_git2_branch(&local_repo, &branch)?
-            .name()?
-            .map(str::to_string);
+        let working_branch_name =
+            if let Ok(Some(git2_branch)) = GitRepoInfo::get_git2_branch(&local_repo, &branch) {
+                git2_branch.name()?.map(str::to_string)
+            } else {
+                // Detached HEAD
+                None
+            };
 
         // We don't support digging around in past commits if the repo is shallow
         if let Some(_c) = &commit_id {
@@ -31,28 +36,33 @@ impl GitRepo {
             }
         }
 
+        // This is essential for when we're in Detatched HEAD
         let commit = Self::get_git2_commit(&local_repo, &working_branch_name, &commit_id)?;
 
         if let Some(url) = remote_url {
             Ok(Self::new(url)?
-                .with_path(path)
+                .with_path(path)?
                 .with_branch(working_branch_name)
                 .with_git2_commit(commit))
         } else {
             // Use this when the current branch has no remote ref
             let file_path = path.as_os_str().to_str().unwrap_or_default();
             Ok(Self::new(file_path)?
-                .with_path(path)
+                .with_path(path)?
                 .with_branch(working_branch_name)
                 .with_git2_commit(commit))
         }
     }
 
     /// Set the location of `GitRepo` on the filesystem
-    pub fn with_path(mut self, path: PathBuf) -> Self {
+    pub fn with_path(mut self, path: PathBuf) -> Result<Self> {
         // We want to get the absolute path of the directory of the repo
-        self.path = Some(fs::canonicalize(path).expect("Directory was not found"));
-        self
+        self.path = if let Ok(p) = fs::canonicalize(path) {
+            Some(p)
+        } else {
+            return Err(eyre!("Directory was not found"));
+        };
+        Ok(self)
     }
 
     /// Intended to be set with the remote name branch of GitRepo
@@ -64,10 +74,17 @@ impl GitRepo {
     }
 
     /// Reinit `GitRepo` with commit id
-    pub fn with_commit(mut self, commit_id: Option<String>) -> Self {
-        self = Self::open(self.path.expect("No path set"), self.branch, commit_id)
-            .expect("Unable to open GitRepo with commit id");
-        self
+    pub fn with_commit(mut self, commit_id: Option<String>) -> Result<Self> {
+        self = if let Some(path) = self.path {
+            if let Ok(repo) = Self::open(path, self.branch, commit_id) {
+                repo
+            } else {
+                return Err(eyre!("Unable to open GitRepo with commit id"));
+            }
+        } else {
+            return Err(eyre!("No path to GitRepo set"));
+        };
+        Ok(self)
     }
 
     /// Set the `GitCommitMeta` from `git2::Commit`
@@ -101,8 +118,14 @@ impl GitRepo {
     /// Use along with `with_*` methods to set other fields of `GitRepo`.
     /// Use `GitRepoCloner` if you need to clone the repo, and convert back with `GitRepo.into()`
     pub fn new<S: AsRef<str>>(url: S) -> Result<Self> {
+        let url = if let Ok(url) = GitUrl::parse(url.as_ref()) {
+            url
+        } else {
+            return Err(eyre!("url failed to parse as GitUrl"));
+        };
+
         Ok(Self {
-            url: GitUrl::parse(url.as_ref()).expect("url failed to parse as GitUrl"),
+            url,
             credentials: None,
             head: None,
             branch: None,
@@ -119,13 +142,21 @@ impl GitRepo {
     }
 
     /// Returns a `git2::Repository` from `self.path`
-    pub fn to_repository(&self) -> Result<Repository, git2::Error> {
-        Self::to_repository_from_path(self.path.clone().expect("No path set to open").as_os_str())
+    pub fn to_repository(&self) -> Result<Repository> {
+        if let Some(path) = self.path.as_ref() {
+            Ok(Self::to_repository_from_path(path.as_os_str())?)
+        } else {
+            Err(eyre!("No path set to open"))
+        }
     }
 
     /// Returns a `git2::Repository` from a given repo directory path
-    pub fn to_repository_from_path<P: AsRef<Path>>(path: P) -> Result<Repository, git2::Error> {
-        Repository::open(path.as_ref().as_os_str())
+    pub fn to_repository_from_path<P: AsRef<Path> + Debug>(path: P) -> Result<Repository> {
+        if let Ok(repo) = Repository::open(path.as_ref().as_os_str()) {
+            Ok(repo)
+        } else {
+            Err(eyre!("Failed to open repo at {path:#?}"))
+        }
     }
 
     /// Return a `git2::Commit` that refers to the commit object requested for building
@@ -135,13 +166,26 @@ impl GitRepo {
         branch: &Option<String>,
         commit_id: &Option<String>,
     ) -> Result<Option<Commit<'repo>>> {
-        let working_branch = GitRepoInfo::get_git2_branch(r, branch)?;
+        // If branch or commit not given, return the HEAD of `r`
+        if let (None, None) = (branch, commit_id) {
+            // Do I need to verify that we're in detached head?
+            // if r.head_detached()? {}
+
+            if let Ok(commit) = r.head()?.peel_to_commit() {
+                return Ok(Some(commit));
+            } else {
+                return Err(eyre!(
+                    "Unable to retrieve HEAD commit object from remote branch"
+                ));
+            }
+        }
 
         match commit_id {
             Some(id) => {
                 debug!("Commit provided. Using {}", id);
                 let commit = r.find_commit(git2::Oid::from_str(id)?)?;
 
+                // TODO: Verify if the commit is in the branch. If not, return Ok(None)
                 // Do we care about detatched HEAD?
                 //let _ = GitRepo::is_commit_in_branch(
                 //    r,
@@ -156,47 +200,66 @@ impl GitRepo {
             None => {
                 debug!("No commit provided. Attempting to use HEAD commit from remote branch");
 
-                match working_branch.upstream() {
-                    Ok(upstream_branch) => {
-                        let working_ref = upstream_branch.into_reference();
+                if branch.is_some() {
+                    if let Ok(Some(git2_branch)) = GitRepoInfo::get_git2_branch(r, branch) {
+                        match git2_branch.upstream() {
+                            Ok(upstream_branch) => {
+                                let working_ref = upstream_branch.into_reference();
 
-                        let commit = working_ref
-                            .peel_to_commit()
-                            .expect("Unable to retrieve HEAD commit object from remote branch");
+                                let commit = if let Ok(commit) = working_ref.peel_to_commit() {
+                                    commit
+                                } else {
+                                    return Err(eyre!(
+                                        "Unable to retrieve HEAD commit object from remote branch"
+                                    ));
+                                };
 
-                        let _ = GitRepoInfo::is_commit_in_branch(
-                            r,
-                            &commit,
-                            &Branch::wrap(working_ref),
-                        );
+                                let _ = GitRepoInfo::is_commit_in_branch(
+                                    r,
+                                    &commit,
+                                    &Branch::wrap(working_ref),
+                                );
 
-                        Ok(Some(commit))
+                                Ok(Some(commit))
+                            }
+                            // This match-arm supports branches that are local-only
+                            Err(_e) => {
+                                debug!(
+                                    "No remote branch found. Using HEAD commit from local branch"
+                                );
+                                let working_ref = git2_branch.into_reference();
+
+                                let commit = if let Ok(commit) = working_ref.peel_to_commit() {
+                                    commit
+                                } else {
+                                    return Err(eyre!(
+                                        "Unable to retrieve HEAD commit object from remote branch"
+                                    ));
+                                };
+
+                                let _ = GitRepoInfo::is_commit_in_branch(
+                                    r,
+                                    &commit,
+                                    &Branch::wrap(working_ref),
+                                );
+
+                                Ok(Some(commit))
+                            }
+                        }
+                    } else {
+                        // This happens if the branch doesn't exist. Should this be Err()?
+                        Ok(None)
                     }
-                    // This match-arm supports branches that are local-only
-                    Err(_e) => {
-                        debug!("No remote branch found. Using HEAD commit from local branch");
-                        let working_ref = working_branch.into_reference();
-
-                        let commit = working_ref
-                            .peel_to_commit()
-                            .expect("Unable to retrieve HEAD commit object from local branch");
-
-                        let _ = GitRepoInfo::is_commit_in_branch(
-                            r,
-                            &commit,
-                            &Branch::wrap(working_ref),
-                        );
-
-                        Ok(Some(commit))
-                    }
+                } else {
+                    unreachable!("We should have returned Err() early if both commit and branch not provided. We need one.")
                 }
             }
         }
     }
 
     /// Test whether `GitRepo` is a shallow clone
-    pub fn is_shallow(&self) -> bool {
-        let repo = self.to_repository().expect("Could not read repo");
-        repo.is_shallow()
+    pub fn is_shallow(&self) -> Result<bool> {
+        let repo = self.to_repository()?;
+        Ok(repo.is_shallow())
     }
 }
