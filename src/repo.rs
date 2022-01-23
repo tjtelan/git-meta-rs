@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -150,11 +151,11 @@ impl GitRepo {
     }
 
     /// Returns a `git2::Repository` from a given repo directory path
-    pub fn to_repository_from_path<P: AsRef<Path>>(path: P) -> Result<Repository> {
+    pub fn to_repository_from_path<P: AsRef<Path> + Debug>(path: P) -> Result<Repository> {
         if let Ok(repo) = Repository::open(path.as_ref().as_os_str()) {
             Ok(repo)
         } else {
-            Err(eyre!("Failed to open repo at {path}"))
+            Err(eyre!("Failed to open repo at {path:#?}"))
         }
     }
 
